@@ -1,0 +1,359 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Acadmate Bot — Prisma schema
+// PostgreSQL. Run `prisma migrate dev` to generate migrations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ModerationActionType {
+  WARN
+  UNWARN
+  MUTE
+  UNMUTE
+  KICK
+  BAN
+  UNBAN
+  DELETE_MESSAGE
+  NOTE
+}
+
+/// Why an automated or manual action was taken.
+enum DetectionReason {
+  SPAM
+  FLOOD
+  DUPLICATE
+  SCAM_LINK
+  BANNED_WORD
+  MANUAL
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  VIEWER
+}
+
+enum ScheduleStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Telegram domain
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A Telegram user that the bot has observed. Subject of moderation.
+model TgUser {
+  id           String   @id @default(cuid())
+  telegramId   BigInt   @unique
+  username     String?
+  firstName    String?
+  lastName     String?
+  isBot        Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships     ChatMember[]
+  warnings        Warning[]        @relation("WarningTarget")
+  issuedWarnings  Warning[]        @relation("WarningIssuer")
+  mutes           Mute[]
+  bans            Ban[]
+  messages        MessageRecord[]
+  actionsTargeted ModerationLog[]  @relation("ActionTarget")
+  actionsIssued   ModerationLog[]  @relation("ActionActor")
+  tagRoleMembers  TagRoleMember[]
+
+  @@index([username])
+  @@map("tg_users")
+}
+
+/// A Telegram group/supergroup the bot is administering.
+model Chat {
+  id           String   @id @default(cuid())
+  telegramId   BigInt   @unique
+  title        String?
+  type         String   @default("supergroup")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  settings      ChatSettings?
+  members       ChatMember[]
+  warnings      Warning[]
+  mutes         Mute[]
+  bans          Ban[]
+  bannedWords   BannedWord[]
+  messages      MessageRecord[]
+  logs          ModerationLog[]
+  tagRoles      TagRole[]
+  scheduledTags ScheduledTag[]
+
+  @@map("chats")
+}
+
+/// Per-chat moderation configuration. One-to-one with Chat.
+model ChatSettings {
+  id     String @id @default(cuid())
+  chatId String @unique
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  // Feature toggles
+  spamDetection      Boolean @default(true)
+  floodDetection     Boolean @default(true)
+  duplicateDetection Boolean @default(true)
+  scamLinkDetection  Boolean @default(true)
+  bannedWordsFilter  Boolean @default(true)
+
+  // Flood thresholds
+  floodMaxMessages   Int @default(5)
+  floodWindowSeconds Int @default(7)
+
+  // Duplicate detection window
+  duplicateWindowSeconds Int @default(60)
+
+  // Warning escalation
+  warnThreshold     Int @default(3)
+  // Action to take when warnThreshold is reached: MUTE | KICK | BAN
+  warnAction        ModerationActionType @default(MUTE)
+  defaultMuteMinutes Int @default(60)
+
+  // Whether to delete the offending message automatically
+  deleteOnDetect Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("chat_settings")
+}
+
+/// Membership of a user in a chat, with cached role.
+model ChatMember {
+  id       String     @id @default(cuid())
+  chatId   String
+  userId   String
+  role     MemberRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+  updatedAt DateTime  @updatedAt
+
+  chat Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user TgUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([chatId, role])
+  @@map("chat_members")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Moderation domain
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Warning {
+  id        String          @id @default(cuid())
+  chatId    String
+  userId    String
+  issuedById String?
+  reason    String
+  detection DetectionReason @default(MANUAL)
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+
+  chat     Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user     TgUser  @relation("WarningTarget", fields: [userId], references: [id], onDelete: Cascade)
+  issuedBy TgUser? @relation("WarningIssuer", fields: [issuedById], references: [id])
+
+  @@index([chatId, userId, active])
+  @@map("warnings")
+}
+
+model Mute {
+  id        String   @id @default(cuid())
+  chatId    String
+  userId    String
+  reason    String?
+  until     DateTime
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  chat Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user TgUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([active, until])
+  @@index([chatId, userId])
+  @@map("mutes")
+}
+
+model Ban {
+  id        String   @id @default(cuid())
+  chatId    String
+  userId    String
+  reason    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  chat Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user TgUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@map("bans")
+}
+
+/// Per-chat banned word or regex pattern.
+model BannedWord {
+  id        String   @id @default(cuid())
+  chatId    String
+  pattern   String
+  isRegex   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, pattern])
+  @@map("banned_words")
+}
+
+/// Lightweight record of recent messages, used for duplicate/flood detection.
+/// Pruned periodically by the scheduler (TTL on contentHash window).
+model MessageRecord {
+  id          String   @id @default(cuid())
+  chatId      String
+  userId      String
+  messageId   BigInt
+  contentHash String
+  createdAt   DateTime @default(now())
+
+  chat Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user TgUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, userId, createdAt])
+  @@index([chatId, contentHash, createdAt])
+  @@index([createdAt])
+  @@map("message_records")
+}
+
+/// Immutable audit trail of every moderation action (manual or automated).
+model ModerationLog {
+  id        String               @id @default(cuid())
+  chatId    String
+  targetId  String?
+  actorId   String?
+  /// null actor = automated action by the bot itself
+  action    ModerationActionType
+  reason    DetectionReason      @default(MANUAL)
+  details   String?
+  metadata  Json?
+  createdAt DateTime             @default(now())
+
+  chat   Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  target TgUser? @relation("ActionTarget", fields: [targetId], references: [id])
+  actor  TgUser? @relation("ActionActor", fields: [actorId], references: [id])
+
+  @@index([chatId, createdAt])
+  @@index([action])
+  @@map("moderation_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tagging domain
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A custom, taggable role within a chat (e.g. "moderators", "year1").
+model TagRole {
+  id        String   @id @default(cuid())
+  chatId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  chat    Chat            @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  members TagRoleMember[]
+
+  @@unique([chatId, name])
+  @@map("tag_roles")
+}
+
+model TagRoleMember {
+  id        String   @id @default(cuid())
+  tagRoleId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  tagRole TagRole @relation(fields: [tagRoleId], references: [id], onDelete: Cascade)
+  user    TgUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tagRoleId, userId])
+  @@map("tag_role_members")
+}
+
+/// A tag broadcast scheduled to fire on a cron expression.
+model ScheduledTag {
+  id          String         @id @default(cuid())
+  chatId      String
+  createdById BigInt
+  // Target: "all" | "admins" | role name
+  target      String
+  message     String
+  cron        String
+  timezone    String         @default("UTC")
+  status      ScheduleStatus @default(ACTIVE)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("scheduled_tags")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard / API auth domain
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Operator account for the admin dashboard. Distinct from TgUser.
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  role         AdminRole @default(VIEWER)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  @@map("admin_users")
+}
+
+/// Hashed refresh tokens enabling rotation + revocation.
+model RefreshToken {
+  id          String    @id @default(cuid())
+  adminUserId String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@map("refresh_tokens")
+}

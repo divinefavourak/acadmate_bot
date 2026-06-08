@@ -1,0 +1,215 @@
+# Specifications
+
+Functional and technical specification for the Acadmate moderation & tagging
+bot. Pairs with `architecture.md` (the *how*); this is the *what*.
+
+---
+
+## 1. Functional requirements
+
+### 1.1 Group moderation
+
+| Feature | Behaviour | Config keys |
+|---------|-----------|-------------|
+| Spam detection | Heuristic score over links, mentions, ALL-CAPS, emoji flooding, invite links. Flags at score ≥ 3. | `spamDetection` |
+| Flood detection | > N messages from one user within W seconds. | `floodDetection`, `floodMaxMessages`, `floodWindowSeconds` |
+| Duplicate detection | Same normalised message repeated within W seconds. | `duplicateDetection`, `duplicateWindowSeconds` |
+| Scam-link detection | URL shorteners, Telegram look-alike domains, raw-IP URLs, crypto/airdrop lures. | `scamLinkDetection` |
+| Banned words | Per-chat literal words or `/regex/` patterns, normalised match. | `bannedWordsFilter` |
+| Warning system | Strikes accumulate; configurable threshold triggers escalation. | `warnThreshold`, `warnAction` |
+| Temporary mute | Telegram restriction + DB window; auto-expired by scheduler. | `defaultMuteMinutes` |
+| Kick | Ban + immediate unban (user may rejoin). | — |
+| Ban | Permanent ban, tracked + reversible from dashboard. | — |
+
+**Exemptions:** admins and owners bypass all automated moderation. The bot never
+moderates itself.
+
+**Auto-delete:** when `deleteOnDetect` is on, the offending message is removed
+before the warning is issued.
+
+### 1.2 Escalation policy
+
+```
+on flag:
+  issue warning
+  activeWarnings = count(active warnings for user in chat)
+  if activeWarnings < warnThreshold:
+    post "warned (n/threshold)"
+  else:
+    clear active warnings
+    apply warnAction:  MUTE (defaultMuteMinutes) | KICK | BAN
+    post escalation notice
+```
+
+### 1.3 Tagging
+
+| Command | Audience | Description |
+|---------|----------|-------------|
+| `/tagall [msg]` | admin | Mention every known member, chunked ≤5/message. |
+| `/admins [msg]` | anyone | Sync live admins from Telegram, then mention them. |
+| `/tag <role> [msg]` | anyone | Mention members of a custom role. |
+| `/roles` | anyone | List custom roles + member counts. |
+| `/createrole <name>` | admin | Create a custom tag role. |
+| `/addrole <role>` (reply) | admin | Add the replied-to user to a role. |
+| `/schedtag <target> "<cron>" [msg]` | admin | Recurring tag broadcast. |
+| `/unschedule <id>` | admin | Cancel a scheduled tag. |
+
+`target` ∈ `all | admins | <roleName>`.
+
+### 1.4 Moderation commands
+
+| Command | Args | Audience |
+|---------|------|----------|
+| `/warn` | `<user> [reason]` | admin |
+| `/unwarn` | `<user>` | admin |
+| `/warns` | `<user>` | admin |
+| `/mute` | `<user> [minutes] [reason]` | admin |
+| `/unmute` | `<user>` | admin |
+| `/kick` | `<user>` | admin |
+| `/ban` | `<user> [reason]` | admin |
+| `/unban` | `<user>` | admin |
+
+`<user>` = reply to a message, `@username`, or numeric id.
+
+### 1.5 Settings commands
+
+| Command | Description |
+|---------|-------------|
+| `/settings` | Show current chat config. |
+| `/set <key> <value>` | Update a setting (booleans: `on/off`). |
+| `/addword <word \| /regex/>` | Add a banned pattern. |
+| `/delword <pattern>` | Remove a banned pattern. |
+| `/words` | List banned patterns. |
+
+---
+
+## 2. Configuration reference (`ChatSettings`)
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `spamDetection` | bool | true | |
+| `floodDetection` | bool | true | |
+| `duplicateDetection` | bool | true | |
+| `scamLinkDetection` | bool | true | |
+| `bannedWordsFilter` | bool | true | |
+| `floodMaxMessages` | int | 5 | per window |
+| `floodWindowSeconds` | int | 7 | |
+| `duplicateWindowSeconds` | int | 60 | |
+| `warnThreshold` | int | 3 | strikes before escalation |
+| `warnAction` | enum | MUTE | MUTE \| KICK \| BAN |
+| `defaultMuteMinutes` | int | 60 | |
+| `deleteOnDetect` | bool | true | |
+
+Process-level defaults seed new chats and come from environment variables (see
+`.env.example`).
+
+---
+
+## 3. Detection specification
+
+### 3.1 Spam score
+
+| Signal | Condition | Points |
+|--------|-----------|--------|
+| Links | ≥3 links | +2 |
+| Links | =2 links | +1 |
+| Mentions | ≥5 `@mentions` | +2 |
+| Shouting | >80% caps over ≥12 letters | +1 |
+| Emoji | ≥10 emoji | +1 |
+| Invite | contains `t.me/+` or `joinchat/` | +2 |
+
+Flag when total ≥ **3**. Severity high (2) at ≥5.
+
+### 3.2 Scam-link rules
+
+Flags when a URL is found that is: a known shortener, a Telegram look-alike
+domain, a raw IP-address URL, or any external link co-occurring with a lure
+phrase (`airdrop`, `free crypto`, `connect wallet`, `giveaway`, …).
+
+### 3.3 Normalisation (banned words & duplicates)
+
+Text is lower-cased, NFKC-normalised, stripped of zero-width/bidi control chars,
+and whitespace-collapsed before matching/hashing. This defeats common evasion
+(`f r e e`, invisible characters, case tricks).
+
+---
+
+## 4. REST API specification
+
+Base path: `/api/v1`. All responses JSON. Auth via `Authorization: Bearer <access>`.
+
+### 4.1 Auth
+
+| Method | Path | Body | Auth | Response |
+|--------|------|------|------|----------|
+| POST | `/auth/login` | `{email,password}` | — | `{admin, accessToken, refreshToken, expiresIn}` |
+| POST | `/auth/refresh` | `{refreshToken}` | — | `{accessToken, refreshToken, expiresIn}` |
+| POST | `/auth/logout` | `{refreshToken}` | — | `204` |
+| GET | `/auth/me` | — | Bearer | `{admin}` |
+
+### 4.2 Logs (read-only)
+
+| Method | Path | Query | Auth |
+|--------|------|-------|------|
+| GET | `/logs` | `chatId?, action?, reason?, page?, pageSize?` | Bearer |
+| GET | `/logs/stats` | — | Bearer |
+
+`/logs` → `{ total, items[] }` with embedded target/actor/chat summaries.
+
+### 4.3 Users
+
+| Method | Path | Body/Query | Auth |
+|--------|------|------------|------|
+| GET | `/users` | `search?, page?, pageSize?` | Bearer |
+| GET | `/users/:id` | — | Bearer |
+| POST | `/users/:id/ban` | `{chatId, reason?}` | ADMIN+ |
+| POST | `/users/:id/unban` | `{chatId}` | ADMIN+ |
+
+### 4.4 Chats
+
+| Method | Path | Body | Auth |
+|--------|------|------|------|
+| GET | `/chats` | — | Bearer |
+| GET | `/chats/:id` | — | Bearer |
+| PATCH | `/chats/:id/settings` | partial settings | ADMIN+ |
+
+### 4.5 Error envelope
+
+```json
+{ "error": { "code": "VALIDATION_ERROR", "message": "Invalid request", "details": { } } }
+```
+
+| Status | When |
+|--------|------|
+| 400 | validation error |
+| 401 | missing/invalid/expired token |
+| 403 | insufficient role / disabled account |
+| 404 | resource not found |
+| 409 | unique conflict (e.g. duplicate email) |
+| 429 | rate limited |
+| 500 | unhandled (message hidden in prod) |
+
+---
+
+## 5. Non-functional requirements
+
+| Area | Target |
+|------|--------|
+| Message processing | One DB write + ≤2 reads per non-admin message. |
+| Mute accuracy | Auto-expiry within ≤60s of window end. |
+| API auth | Access TTL 15m, refresh TTL 7d, rotation on every refresh. |
+| Observability | Structured JSON logs (pino) with secret redaction. |
+| Portability | Runs via `docker compose up` with only `.env` provided. |
+| Type safety | `tsc --strict`, no implicit `any`, validated env + request bodies. |
+
+---
+
+## 6. Test strategy (recommended)
+
+- **Unit**: each detector with crafted `InspectedMessage` fixtures; `AuthService`
+  token rotation/revocation; `ModerationService` escalation thresholds (inject
+  fake gateway + in-memory repos).
+- **Integration**: API routes against a disposable Postgres (Testcontainers) with
+  Prisma migrations applied.
+- **Contract**: golden tests asserting spam/scam scoring on a corpus of known
+  spam vs. ham messages to guard against regressions when tuning thresholds.

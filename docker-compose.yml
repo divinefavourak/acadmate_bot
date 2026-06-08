@@ -1,0 +1,82 @@
+# ─────────────────────────────────────────────────────────────
+# Local / single-host production stack.
+# `docker compose up -d` brings up Postgres, runs migrations,
+# then starts the bot and the dashboard API as separate services.
+#
+# NOTE: containers reach Postgres at host `postgres` (the service name),
+# NOT `localhost`. We therefore build DATABASE_URL here from POSTGRES_*
+# and ignore the host-side DATABASE_URL in .env (which uses localhost for
+# host tools like the Prisma CLI / `npm run dev`).
+# ─────────────────────────────────────────────────────────────
+
+# Reusable in-network connection string (host = postgres service name).
+x-database-url: &database_url
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot job: apply migrations, then exit. Other services wait on it.
+  migrate:
+    build:
+      context: .
+      target: build
+    command: npx prisma migrate deploy
+    environment: *database_url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  bot:
+    build:
+      context: .
+      target: runtime
+    command: node dist/bot/index.js
+    restart: unless-stopped
+    env_file: .env
+    # environment overrides env_file, forcing the in-network DB host.
+    environment: *database_url
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # Webhook mode needs this port exposed behind your reverse proxy.
+    ports:
+      - '8443:8443'
+
+  api:
+    build:
+      context: .
+      target: runtime
+    command: node dist/api/server.js
+    restart: unless-stopped
+    env_file: .env
+    # environment overrides env_file, forcing the in-network DB host.
+    environment: *database_url
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - '4000:4000'
+
+volumes:
+  pgdata:

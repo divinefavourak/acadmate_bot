@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(npm run *)",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('dist/bot/index.js','utf8'\\); console.log\\(s.includes\\('@/'\\)?'STILL HAS @/ ALIAS \\(BAD\\)':'aliases rewritten OK'\\); console.log\\('sample requires:'\\); console.log\\(s.split\\('\\\\n'\\).filter\\(l=>l.includes\\('require\\('\\)\\).slice\\(0,4\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(BOT_TOKEN=123:FAKE DATABASE_URL=postgresql://u:p@localhost:5432/db JWT_SECRET=0123456789012345678901234567890123456789 node -e ' *)",
+      "Bash(node dist/config/index.js)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(DATABASE_URL=\"postgresql://u:p@localhost:5432/db\" npx prisma validate)",
+      "Bash(npx vitest *)",
+      "Bash(node -e ' *)",
+      "Bash(node .fixhash.mjs)",
+      "Bash(rm .fixhash.mjs)",
+      "Bash(DATABASE_URL=\"postgresql://u:p@localhost:5432/db\" npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(docker info *)",
+      "Bash(echo \"---exit=$?---\")",
+      "Bash(BOT_TOKEN=\"123:FAKE\" DATABASE_URL=\"postgresql://u:p@localhost:5432/db\" JWT_SECRET=\"0123456789012345678901234567890123456789\" node -e \"const {Telegraf}=require\\('telegraf'\\);const {Container}=require\\('./dist/container'\\);const c=new Container\\(new Telegraf\\('123:FAKE'\\).telegram\\);console.log\\('adminCache wired:', !!c.adminCache && typeof c.adminCache.resolveRole==='function'\\);\")"
+    ]
+  }
+}
