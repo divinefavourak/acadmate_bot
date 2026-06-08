@@ -39,6 +39,33 @@ const envSchema = z.object({
   DUPLICATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   WARN_THRESHOLD: z.coerce.number().int().positive().default(3),
   DEFAULT_MUTE_MINUTES: z.coerce.number().int().positive().default(60),
+
+  // AI providers + router
+  AI_PROVIDER_ORDER: z
+    .string()
+    .default('groq,gemini')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+  AI_PROVIDER_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
+  AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  AI_MODERATION_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+  AI_MODERATION_MIN_LENGTH: z.coerce.number().int().nonnegative().default(24),
+
+  // Operational alerts: the bot DMs this Telegram user id on errors.
+  // Leave blank to disable. You must /start the bot in DM at least once.
+  OWNER_TELEGRAM_ID: z.coerce.number().int().positive().optional(),
+  ERROR_ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(300),
 });
 
 const parsed = envSchema.safeParse(process.env);

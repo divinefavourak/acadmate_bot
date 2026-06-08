@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acadmate Admin</title>
+    <style>
+      :root {
+        --bg: #0f1115; --panel: #181b22; --panel2: #1f232c; --border: #2a2f3a;
+        --text: #e6e9ef; --muted: #9aa3b2; --accent: #5b8cff; --danger: #ef4444;
+        --ok: #22c55e; --warn: #f59e0b;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg); color: var(--text); }
+      a { color: var(--accent); }
+      button { cursor: pointer; border: 1px solid var(--border); background: var(--panel2);
+        color: var(--text); padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+      input, select { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+        padding: 8px 10px; border-radius: 8px; font-size: 14px; }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+      .hidden { display: none !important; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .grow { flex: 1; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+        vertical-align: top; }
+      th { color: var(--muted); font-weight: 600; }
+      tr:hover td { background: var(--panel2); }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+        border: 1px solid var(--border); }
+      .muted { color: var(--muted); }
+      /* Login */
+      #login { min-height: 100vh; display: grid; place-items: center; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+        padding: 28px; width: 360px; }
+      .card h1 { margin: 0 0 4px; font-size: 20px; }
+      /* App */
+      header { display: flex; align-items: center; gap: 16px; padding: 14px 20px;
+        border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; }
+      header .brand { font-weight: 700; }
+      nav button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+      main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+      .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+        padding: 16px; margin-bottom: 16px; }
+      .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+      .err { color: var(--danger); font-size: 13px; min-height: 18px; }
+      .toggle { display: flex; align-items: center; gap: 8px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <!-- LOGIN -->
+    <section id="login">
+      <form class="card" id="loginForm">
+        <h1>Acadmate Admin</h1>
+        <p class="muted">Sign in to the moderation dashboard.</p>
+        <label>Email</label>
+        <input id="email" type="email" autocomplete="username" required />
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+        <div class="err" id="loginErr"></div>
+        <button class="primary" style="width:100%;margin-top:12px" type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <!-- APP -->
+    <div id="app" class="hidden">
+      <header>
+        <span class="brand">🛡️ Acadmate</span>
+        <nav class="row">
+          <button data-tab="logs" class="active">Logs</button>
+          <button data-tab="users">Users</button>
+          <button data-tab="chats">Chats</button>
+        </nav>
+        <span class="grow"></span>
+        <span class="muted" id="whoami"></span>
+        <button id="logout">Logout</button>
+      </header>
+      <main>
+        <!-- LOGS -->
+        <section id="tab-logs">
+          <div class="toolbar">
+            <select id="logAction"><option value="">All actions</option></select>
+            <select id="logReason"><option value="">All reasons</option></select>
+            <button id="logReload">Refresh</button>
+            <span class="grow"></span>
+            <span class="muted" id="logCount"></span>
+          </div>
+          <div class="panel" style="overflow:auto">
+            <table id="logTable">
+              <thead><tr><th>When</th><th>Action</th><th>Reason</th><th>Target</th><th>Actor</th><th>Details</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="row">
+            <button id="logPrev">‹ Prev</button><span class="muted" id="logPage"></span><button id="logNext">Next ›</button>
+          </div>
+        </section>
+
+        <!-- USERS -->
+        <section id="tab-users" class="hidden">
+          <div class="toolbar">
+            <input id="userSearch" placeholder="Search username / name…" class="grow" />
+            <button id="userReload">Search</button>
+          </div>
+          <div class="panel" style="overflow:auto">
+            <table id="userTable">
+              <thead><tr><th>Name</th><th>Username</th><th>Telegram ID</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="userDetail" class="panel hidden"></div>
+        </section>
+
+        <!-- CHATS -->
+        <section id="tab-chats" class="hidden">
+          <div class="toolbar"><button id="chatReload">Refresh</button></div>
+          <div id="chatList"></div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      // ── Tiny API client with token storage + auto-refresh ──────────────────
+      const store = {
+        get a() { return localStorage.getItem('acc'); },
+        get r() { return localStorage.getItem('ref'); },
+        set(acc, ref) { localStorage.setItem('acc', acc); if (ref) localStorage.setItem('ref', ref); },
+        clear() { localStorage.removeItem('acc'); localStorage.removeItem('ref'); },
+      };
+      const BASE = '/api/v1';
+
+      async function api(path, opts = {}, retry = true) {
+        const res = await fetch(BASE + path, {
+          ...opts,
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.a, ...(opts.headers || {}) },
+        });
+        if (res.status === 401 && retry && store.r) {
+          const ok = await refresh();
+          if (ok) return api(path, opts, false);
+        }
+        if (res.status === 401) { logout(); throw new Error('Session expired'); }
+        const body = res.status === 204 ? null : await res.json().catch(() => null);
+        if (!res.ok) throw new Error(body?.error?.message || ('HTTP ' + res.status));
+        return body;
+      }
+      async function refresh() {
+        try {
+          const res = await fetch(BASE + '/auth/refresh', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: store.r }),
+          });
+          if (!res.ok) return false;
+          const t = await res.json(); store.set(t.accessToken, t.refreshToken); return true;
+        } catch { return false; }
+      }
+
+      // ── Auth ───────────────────────────────────────────────────────────────
+      const $ = (s) => document.querySelector(s);
+      function showApp(show) { $('#app').classList.toggle('hidden', !show); $('#login').classList.toggle('hidden', show); }
+      function logout() { store.clear(); showApp(false); }
+      $('#logout').onclick = logout;
+
+      $('#loginForm').onsubmit = async (e) => {
+        e.preventDefault(); $('#loginErr').textContent = '';
+        try {
+          const res = await fetch(BASE + '/auth/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: $('#email').value, password: $('#password').value }),
+          });
+          const body = await res.json();
+          if (!res.ok) throw new Error(body?.error?.message || 'Login failed');
+          store.set(body.accessToken, body.refreshToken);
+          $('#whoami').textContent = body.admin.email + ' · ' + body.admin.role;
+          showApp(true); loadLogs();
+        } catch (err) { $('#loginErr').textContent = err.message; }
+      };
+
+      // ── Tabs ─────────────────────────────────────────────────────────────
+      document.querySelectorAll('nav button').forEach((b) => {
+        b.onclick = () => {
+          document.querySelectorAll('nav button').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          for (const t of ['logs', 'users', 'chats']) $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab);
+          if (b.dataset.tab === 'logs') loadLogs();
+          if (b.dataset.tab === 'chats') loadChats();
+        };
+      });
+
+      const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      const who = (u) => u ? esc(u.username ? '@' + u.username : (u.firstName || u.telegramId)) : '<span class="muted">—</span>';
+      const ACTIONS = ['WARN','UNWARN','MUTE','UNMUTE','KICK','BAN','UNBAN','DELETE_MESSAGE','NOTE'];
+      const REASONS = ['SPAM','FLOOD','DUPLICATE','SCAM_LINK','BANNED_WORD','MANUAL','TOXICITY','HARASSMENT','OFF_TOPIC'];
+      ACTIONS.forEach((a) => $('#logAction').insertAdjacentHTML('beforeend', `<option>${a}</option>`));
+      REASONS.forEach((r) => $('#logReason').insertAdjacentHTML('beforeend', `<option>${r}</option>`));
+
+      // ── Logs ─────────────────────────────────────────────────────────────
+      let logPage = 1;
+      async function loadLogs() {
+        const params = new URLSearchParams({ page: logPage, pageSize: 25 });
+        if ($('#logAction').value) params.set('action', $('#logAction').value);
+        if ($('#logReason').value) params.set('reason', $('#logReason').value);
+        try {
+          const data = await api('/logs?' + params);
+          const rows = data.items.map((l) => `<tr>
+            <td class="muted">${new Date(l.createdAt).toLocaleString()}</td>
+            <td><span class="tag">${l.action}</span></td>
+            <td>${l.reason}</td>
+            <td>${who(l.target)}</td>
+            <td>${l.actor ? who(l.actor) : '<span class="muted">auto</span>'}</td>
+            <td>${esc(l.details)}</td></tr>`).join('');
+          $('#logTable tbody').innerHTML = rows || '<tr><td colspan="6" class="muted">No logs.</td></tr>';
+          $('#logCount').textContent = data.total + ' total';
+          $('#logPage').textContent = 'Page ' + logPage;
+        } catch (e) { $('#logTable tbody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; }
+      }
+      $('#logReload').onclick = () => { logPage = 1; loadLogs(); };
+      $('#logPrev').onclick = () => { if (logPage > 1) { logPage--; loadLogs(); } };
+      $('#logNext').onclick = () => { logPage++; loadLogs(); };
+
+      // ── Users ────────────────────────────────────────────────────────────
+      async function loadUsers() {
+        const q = $('#userSearch').value.trim();
+        const data = await api('/users?' + new URLSearchParams({ search: q, pageSize: 25 }));
+        $('#userTable tbody').innerHTML = data.items.map((u) => `<tr>
+          <td>${esc(u.firstName || '—')}</td><td>${u.username ? '@' + esc(u.username) : '<span class="muted">—</span>'}</td>
+          <td class="muted">${u.telegramId}</td>
+          <td><button data-id="${u.id}">View</button></td></tr>`).join('')
+          || '<tr><td colspan="4" class="muted">No users.</td></tr>';
+        document.querySelectorAll('#userTable button').forEach((b) => b.onclick = () => showUser(b.dataset.id));
+      }
+      async function showUser(id) {
+        const u = await api('/users/' + id);
+        const chats = u.memberships.map((m) => `<option value="${m.chat ? '' : ''}">${esc(m.chat?.title || m.chat?.telegramId)}</option>`);
+        const memOpts = u.memberships.map((m) => `<option value="${m.chatId}">${esc(m.chat?.title || m.chat?.telegramId)}</option>`).join('');
+        $('#userDetail').classList.remove('hidden');
+        $('#userDetail').innerHTML = `
+          <div class="row"><h3 style="margin:0">${who(u)}</h3><span class="grow"></span>
+            <span class="muted">${u.telegramId}</span></div>
+          <p class="muted">Warnings: ${u.warnings.length} · Mutes: ${u.mutes.length} · Bans: ${u.bans.filter(b=>b.active).length} active</p>
+          <div class="row">
+            <select id="banChat">${memOpts || '<option value="">no known chats</option>'}</select>
+            <input id="banReason" placeholder="reason (optional)" class="grow" />
+            <button class="danger" id="banBtn">Ban</button>
+            <button id="unbanBtn">Unban</button>
+          </div>
+          <div class="err" id="userErr"></div>`;
+        $('#banBtn').onclick = () => userAction(id, 'ban');
+        $('#unbanBtn').onclick = () => userAction(id, 'unban');
+      }
+      async function userAction(id, action) {
+        const chatId = $('#banChat').value;
+        if (!chatId) { $('#userErr').textContent = 'Select a chat.'; return; }
+        try {
+          await api(`/users/${id}/${action}`, { method: 'POST',
+            body: JSON.stringify({ chatId, reason: $('#banReason')?.value || undefined }) });
+          $('#userErr').textContent = '✅ ' + action + ' done';
+        } catch (e) { $('#userErr').textContent = e.message; }
+      }
+      $('#userReload').onclick = loadUsers;
+      $('#userSearch').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadUsers(); });
+
+      // ── Chats ────────────────────────────────────────────────────────────
+      const BOOLS = ['spamDetection','floodDetection','duplicateDetection','scamLinkDetection','bannedWordsFilter','aiModeration','deleteOnDetect'];
+      const NUMS = ['floodMaxMessages','floodWindowSeconds','duplicateWindowSeconds','warnThreshold','defaultMuteMinutes'];
+      async function loadChats() {
+        const chats = await api('/chats');
+        $('#chatList').innerHTML = chats.map((c) => {
+          const s = c.settings || {};
+          const bools = BOOLS.map((k) => `<label class="toggle"><input type="checkbox" data-chat="${c.id}" data-key="${k}" ${s[k] ? 'checked' : ''}/> ${k}</label>`).join('');
+          const nums = NUMS.map((k) => `<div><label>${k}</label><input type="number" data-chat="${c.id}" data-key="${k}" value="${s[k] ?? 0}" style="width:90px"/></div>`).join('');
+          return `<div class="panel">
+            <div class="row"><h3 style="margin:0">${esc(c.title || c.telegramId)}</h3>
+              <span class="grow"></span><span class="muted">${c._count?.members ?? 0} members · ${c._count?.logs ?? 0} logs</span></div>
+            <div class="grid2" style="margin-top:8px">${bools}</div>
+            <div class="row" style="margin-top:8px">${nums}
+              <label style="margin:0">warnAction
+                <select data-chat="${c.id}" data-key="warnAction">
+                  ${['MUTE','KICK','BAN'].map((a)=>`<option ${s.warnAction===a?'selected':''}>${a}</option>`).join('')}
+                </select></label>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <label style="margin:0;flex:1">topic <input data-chat="${c.id}" data-key="topic" value="${esc(s.topic||'')}" class="grow"/></label>
+            </div>
+            <div class="row" style="margin-top:10px"><button class="primary" data-save="${c.id}">Save settings</button>
+              <span class="err" data-err="${c.id}"></span></div>
+          </div>`;
+        }).join('') || '<p class="muted">No chats yet. Add the bot to a group.</p>';
+        document.querySelectorAll('[data-save]').forEach((b) => b.onclick = () => saveChat(b.dataset.save));
+      }
+      async function saveChat(chatId) {
+        const patch = {};
+        document.querySelectorAll(`[data-chat="${chatId}"]`).forEach((el) => {
+          const k = el.dataset.key;
+          if (el.type === 'checkbox') patch[k] = el.checked;
+          else if (el.type === 'number') patch[k] = Number(el.value);
+          else if (k === 'topic') patch[k] = el.value.trim() || null;
+          else patch[k] = el.value;
+        });
+        const errEl = document.querySelector(`[data-err="${chatId}"]`);
+        try { await api('/chats/' + chatId + '/settings', { method: 'PATCH', body: JSON.stringify(patch) });
+          errEl.style.color = 'var(--ok)'; errEl.textContent = '✅ saved'; }
+        catch (e) { errEl.style.color = 'var(--danger)'; errEl.textContent = e.message; }
+      }
+      $('#chatReload').onclick = loadChats;
+
+      // ── Boot: resume session if a token exists ────────────────────────────
+      (async () => {
+        if (store.a) {
+          try { const me = await api('/auth/me'); $('#whoami').textContent = me.admin.email + ' · ' + me.admin.role; showApp(true); loadLogs(); }
+          catch { logout(); }
+        }
+      })();
+    </script>
+  </body>
+</html>

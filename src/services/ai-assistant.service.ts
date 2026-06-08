@@ -1,0 +1,169 @@
+import type { AiRouter } from '@/ai/ai-router';
+import { AiUnavailableError } from '@/ai/ai.errors';
+import { scopedLogger } from '@/utils/logger';
+
+const log = scopedLogger('ai-assistant');
+
+export type AiModerationCategory =
+  | 'SAFE'
+  | 'SPAM'
+  | 'SCAM'
+  | 'TOXIC'
+  | 'HARASSMENT'
+  | 'OFF_TOPIC';
+
+export interface AiModerationVerdict {
+  category: AiModerationCategory;
+  flagged: boolean;
+  confidence: number; // 0..1
+  reason: string;
+}
+
+export interface AppealRecommendation {
+  recommendation: 'UPHOLD' | 'OVERTURN' | 'UNSURE';
+  reason: string;
+}
+
+/**
+ * High-level AI use-cases built on the failover router. Every method degrades
+ * gracefully: if no provider is available, moderation returns SAFE (so the bot
+ * falls back to heuristics) and the chat features return a friendly notice.
+ */
+export class AiAssistantService {
+  constructor(private readonly router: AiRouter) {}
+
+  get enabled(): boolean {
+    return this.router.available;
+  }
+
+  /** Classify a single group message for moderation. Never throws. */
+  async classifyMessage(text: string, chatTopic?: string): Promise<AiModerationVerdict> {
+    const system =
+      'You are a strict but fair Telegram group moderator. Classify the user message into exactly one category: ' +
+      'SAFE, SPAM, SCAM, TOXIC, HARASSMENT, or OFF_TOPIC. ' +
+      'SCAM = phishing, crypto/airdrop lures, fake giveaways. SPAM = unsolicited ads/self-promo/flooding. ' +
+      'TOXIC = slurs, hate, severe profanity directed at people. HARASSMENT = targeted bullying/threats. ' +
+      'OFF_TOPIC only if a group topic is provided and the message is clearly unrelated. ' +
+      (chatTopic ? `The group topic is: "${chatTopic}". ` : '') +
+      'Respond with ONLY a JSON object: {"category": "...", "confidence": 0.0-1.0, "reason": "<=120 chars"}. ' +
+      'Be conservative: prefer SAFE unless reasonably confident.';
+
+    try {
+      const result = await this.router.complete({
+        system,
+        messages: [{ role: 'user', content: text.slice(0, 2000) }],
+        json: true,
+        temperature: 0,
+        maxTokens: 200,
+      });
+      const parsed = extractJson<{ category?: string; confidence?: number; reason?: string }>(
+        result.text,
+      );
+      const category = normaliseCategory(parsed?.category);
+      const confidence = clamp01(parsed?.confidence ?? 0.5);
+      return {
+        category,
+        flagged: category !== 'SAFE' && confidence >= 0.6,
+        confidence,
+        reason: (parsed?.reason ?? 'AI classification').slice(0, 200),
+      };
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'classifyMessage failed');
+      return { category: 'SAFE', flagged: false, confidence: 0, reason: 'AI unavailable' };
+    }
+  }
+
+  /** Answer a member's question. Returns null when AI is unavailable. */
+  async ask(question: string): Promise<string | null> {
+    try {
+      const result = await this.router.complete({
+        system:
+          'You are a concise, helpful assistant inside a Telegram group for an academic/student community. ' +
+          'Answer in plain text (no markdown headings), under 120 words. If unsure, say so briefly.',
+        messages: [{ role: 'user', content: question.slice(0, 2000) }],
+        temperature: 0.5,
+        maxTokens: 400,
+      });
+      return result.text.trim();
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'ask failed');
+      return null;
+    }
+  }
+
+  /** Summarise a transcript of recent messages. Returns null when unavailable. */
+  async summarize(transcript: string): Promise<string | null> {
+    if (!transcript.trim()) return 'Nothing to summarise yet.';
+    try {
+      const result = await this.router.complete({
+        system:
+          'Summarise this Telegram group chat transcript into 3-6 short bullet points capturing the key ' +
+          'topics, decisions, and questions. Plain text, start each bullet with "• ". Be neutral and concise.',
+        messages: [{ role: 'user', content: transcript.slice(0, 12_000) }],
+        temperature: 0.3,
+        maxTokens: 500,
+      });
+      return result.text.trim();
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'summarize failed');
+      return null;
+    }
+  }
+
+  /** Review a ban appeal given context. Advisory only — a human still decides. */
+  async reviewAppeal(context: string): Promise<AppealRecommendation | null> {
+    try {
+      const result = await this.router.complete({
+        system:
+          'You review Telegram moderation ban appeals. Given the moderation history and the user\'s appeal, ' +
+          'recommend whether to UPHOLD the ban, OVERTURN it, or mark UNSURE. You are advisory only; a human ' +
+          'admin makes the final call. Respond with ONLY JSON: ' +
+          '{"recommendation":"UPHOLD|OVERTURN|UNSURE","reason":"<=200 chars"}.',
+        messages: [{ role: 'user', content: context.slice(0, 6000) }],
+        json: true,
+        temperature: 0.2,
+        maxTokens: 250,
+      });
+      const parsed = extractJson<{ recommendation?: string; reason?: string }>(result.text);
+      const rec = parsed?.recommendation?.toUpperCase();
+      return {
+        recommendation: rec === 'UPHOLD' || rec === 'OVERTURN' ? rec : 'UNSURE',
+        reason: (parsed?.reason ?? 'No reason provided').slice(0, 300),
+      };
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'reviewAppeal failed');
+      return null;
+    }
+  }
+}
+
+/** Tolerant JSON extraction — models sometimes wrap JSON in prose or fences. */
+function extractJson<T>(text: string): T | null {
+  const fenced = text.replace(/```(?:json)?/gi, '').trim();
+  const start = fenced.indexOf('{');
+  const end = fenced.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) return null;
+  try {
+    return JSON.parse(fenced.slice(start, end + 1)) as T;
+  } catch {
+    return null;
+  }
+}
+
+function normaliseCategory(raw?: string): AiModerationCategory {
+  const c = (raw ?? '').toUpperCase();
+  const allowed: AiModerationCategory[] = [
+    'SAFE',
+    'SPAM',
+    'SCAM',
+    'TOXIC',
+    'HARASSMENT',
+    'OFF_TOPIC',
+  ];
+  return (allowed as string[]).includes(c) ? (c as AiModerationCategory) : 'SAFE';
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -23,9 +24,33 @@ export function buildApiApp(container: Container): express.Express {
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // behind a reverse proxy / load balancer
 
-  // Security headers + strict JSON body limit.
-  app.use(helmet());
+  // Security headers. We relax the CSP just enough for the single-file
+  // dashboard: allow inline script/style, and DROP upgrade-insecure-requests
+  // so the dashboard works over plain HTTP (no TLS / raw IP) too. All other
+  // Helmet protections (noSniff, frameguard, HSTS, etc.) stay on.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          frameAncestors: ["'self'"],
+        },
+      },
+    }),
+  );
   app.use(express.json({ limit: '100kb' }));
+
+  // Serve the admin dashboard (single-file SPA) at the root.
+  const publicDir = path.resolve(process.cwd(), 'public');
+  app.use(express.static(publicDir));
+  app.get('/', (_req, res) => res.sendFile(path.join(publicDir, 'dashboard.html')));
 
   // Minimal hand-rolled CORS honouring the configured allow-list.
   app.use((req, res, next) => {

@@ -13,6 +13,8 @@ const settingsSchema = z
     duplicateDetection: z.boolean(),
     scamLinkDetection: z.boolean(),
     bannedWordsFilter: z.boolean(),
+    aiModeration: z.boolean(),
+    topic: z.string().max(200).nullable(),
     floodMaxMessages: z.number().int().positive(),
     floodWindowSeconds: z.number().int().positive(),
     duplicateWindowSeconds: z.number().int().positive(),
