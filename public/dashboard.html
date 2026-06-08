@@ -302,9 +302,10 @@
           const k = el.dataset.key;
           if (el.type === 'checkbox') patch[k] = el.checked;
           else if (el.type === 'number') {
-            // API requires positive ints; skip invalid/empty so we never PATCH a 0.
+            // API requires positive ints; only send genuine positive integers
+            // (reject empty, 0, and fractional like 0.5 which would truncate to 0).
             const n = Number(el.value);
-            if (Number.isFinite(n) && n > 0) patch[k] = Math.trunc(n);
+            if (Number.isInteger(n) && n > 0) patch[k] = n;
           } else if (k === 'topic') patch[k] = el.value.trim() || null;
           else patch[k] = el.value;
         });

@@ -4,5 +4,5 @@
  * message formatting or inject entities. Escapes the legacy special chars.
  */
 export function escapeMarkdown(text: string): string {
-  return text.replace(/([_*`[])/g, '\\$1');
+  return text.replace(/([_*`\[])/g, '\\$1');
 }
