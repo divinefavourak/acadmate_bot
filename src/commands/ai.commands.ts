@@ -2,6 +2,7 @@ import { Composer } from 'telegraf';
 import type { BotContext } from '@/types';
 import type { Container } from '@/container';
 import { commandArgs, requireAdmin, resolveTarget } from '@/bot/helpers';
+import { escapeMarkdown } from '@/utils/markdown';
 
 /**
  * AI-powered commands, all backed by the failover router.
@@ -77,7 +78,7 @@ export function aiCommands(container: Container): Composer<BotContext> {
       return void ctx.reply('🤖 Sorry, all AI providers are busy. Try again shortly.');
     }
     await ctx.reply(
-      `🧑‍⚖️ AI recommendation for ${resolved.target.label}: *${review.recommendation}*\n${review.reason}\n\n_Advisory only — your decision stands._`,
+      `🧑‍⚖️ AI recommendation for ${escapeMarkdown(resolved.target.label)}: *${review.recommendation}*\n${escapeMarkdown(review.reason)}\n\n_Advisory only — your decision stands._`,
       { parse_mode: 'Markdown' },
     );
   });

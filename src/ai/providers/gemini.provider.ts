@@ -70,9 +70,12 @@ export class GeminiProvider implements AiProvider {
       throw new AiBadResponseError(this.name, `HTTP ${res.status}: ${await safeText(res)}`);
     }
 
-    const data = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-    };
+    let data: { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    try {
+      data = (await res.json()) as typeof data;
+    } catch (err) {
+      throw new AiBadResponseError(this.name, `invalid JSON: ${(err as Error).message}`);
+    }
     const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
     if (!text) throw new AiBadResponseError(this.name, 'empty completion');
 

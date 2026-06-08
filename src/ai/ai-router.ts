@@ -57,15 +57,22 @@ export class AiRouter {
     for (const provider of usable) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs);
+      // Chain the caller's signal so upstream cancellation still aborts the
+      // request, in addition to the router's own per-attempt timeout.
+      const onAbort = (): void => controller.abort();
+      if (opts.signal) {
+        if (opts.signal.aborted) controller.abort();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
       try {
-        const result = await provider.complete({ ...opts, signal: controller.signal });
-        return result;
+        return await provider.complete({ ...opts, signal: controller.signal });
       } catch (err) {
         lastError = err;
         this.handleFailure(provider.name, err);
         // Fall through to the next provider.
       } finally {
         clearTimeout(timer);
+        opts.signal?.removeEventListener('abort', onAbort);
       }
     }
 

@@ -3,6 +3,10 @@ import { ModerationActionType, type Prisma } from '@prisma/client';
 import type { BotContext } from '@/types';
 import type { Container } from '@/container';
 import { commandArgs, requireAdmin } from '@/bot/helpers';
+import { escapeMarkdown } from '@/utils/markdown';
+
+/** Max length for a chat topic, mirrored by the dashboard API schema. */
+const TOPIC_MAX_LENGTH = 200;
 
 /**
  * Per-chat configuration commands.
@@ -24,7 +28,7 @@ export function adminCommands(container: Container): Composer<BotContext> {
         '⚙️ *Chat settings*',
         `spam: ${onOff(s.spamDetection)}  flood: ${onOff(s.floodDetection)}  duplicate: ${onOff(s.duplicateDetection)}`,
         `scamLinks: ${onOff(s.scamLinkDetection)}  bannedWords: ${onOff(s.bannedWordsFilter)}  ai: ${onOff(s.aiModeration)}`,
-        `topic: ${s.topic ?? '(none)'}`,
+        `topic: ${s.topic ? escapeMarkdown(s.topic) : '(none)'}`,
         `flood: ${s.floodMaxMessages} msgs / ${s.floodWindowSeconds}s`,
         `duplicate window: ${s.duplicateWindowSeconds}s`,
         `warnThreshold: ${s.warnThreshold} → ${s.warnAction}`,
@@ -114,8 +118,10 @@ function buildSettingsPatch(key: string, value: string): Prisma.ChatSettingsUpda
     case 'aiModeration':
       return { aiModeration: bool };
     case 'topic':
-      // Free-text; `/set topic off` clears it.
-      return { topic: value === 'off' || value === 'none' ? null : value };
+      // Free-text; `/set topic off` clears it. Capped to match the API schema.
+      return {
+        topic: value === 'off' || value === 'none' ? null : value.slice(0, TOPIC_MAX_LENGTH),
+      };
     case 'deleteOnDetect':
       return { deleteOnDetect: bool };
     case 'floodMaxMessages':

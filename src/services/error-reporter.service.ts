@@ -37,7 +37,6 @@ export class ErrorReporterService {
     const now = Date.now();
     const last = this.lastSentAt.get(fingerprint) ?? 0;
     if (now - last < this.cooldownMs) return; // suppressed (still logged above)
-    this.lastSentAt.set(fingerprint, now);
 
     const text = [
       '🚨 Acadmate alert',
@@ -49,11 +48,13 @@ export class ErrorReporterService {
       .filter(Boolean)
       .join('\n');
 
-    try {
-      await this.telegram.sendMessage(BigInt(config.OWNER_TELEGRAM_ID!), text);
-    } catch (sendErr) {
-      // If we can't even DM the owner, just log it — never recurse into reporting.
-      log.warn({ sendErr }, 'failed to deliver error alert DM');
+    const delivered = await this.telegram.sendMessage(BigInt(config.OWNER_TELEGRAM_ID!), text);
+    // Only start the dedup cooldown once delivery actually succeeded, so a
+    // transient send failure doesn't silently mute the alert.
+    if (delivered !== null) {
+      this.lastSentAt.set(fingerprint, now);
+    } else {
+      log.warn('failed to deliver error alert DM');
     }
   }
 }

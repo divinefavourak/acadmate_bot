@@ -28,11 +28,15 @@ export class AiModerationDetector implements Detector {
     const text = message.text?.trim() ?? '';
     if (!this.worthChecking(text, message)) return PASS;
 
-    const key = contentHash(text);
+    // Verdicts depend on the chat topic, so the cache key must include it —
+    // otherwise identical text in two differently-themed chats could share a
+    // wrong OFF_TOPIC verdict.
+    const topic = ctx.settings.topic ?? '';
+    const key = `${topic}::${contentHash(text)}`;
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.at < this.cacheTtlMs) return cached.result;
 
-    const verdict = await this.ai.classifyMessage(text, ctx.settings.topic ?? undefined);
+    const verdict = await this.ai.classifyMessage(text, topic || undefined);
     const result: DetectionResult = verdict.flagged
       ? {
           flagged: true,

@@ -68,9 +68,12 @@ export class OpenAiCompatibleProvider implements AiProvider {
       throw new AiBadResponseError(this.name, `HTTP ${res.status}: ${await safeText(res)}`);
     }
 
-    const data = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
+    let data: { choices?: { message?: { content?: string } }[] };
+    try {
+      data = (await res.json()) as typeof data;
+    } catch (err) {
+      throw new AiBadResponseError(this.name, `invalid JSON: ${(err as Error).message}`);
+    }
     const text = data.choices?.[0]?.message?.content;
     if (!text) throw new AiBadResponseError(this.name, 'empty completion');
 

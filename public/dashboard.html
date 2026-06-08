@@ -59,9 +59,9 @@
       <form class="card" id="loginForm">
         <h1>Acadmate Admin</h1>
         <p class="muted">Sign in to the moderation dashboard.</p>
-        <label>Email</label>
+        <label for="email">Email</label>
         <input id="email" type="email" autocomplete="username" required />
-        <label>Password</label>
+        <label for="password">Password</label>
         <input id="password" type="password" autocomplete="current-password" required />
         <div class="err" id="loginErr"></div>
         <button class="primary" style="width:100%;margin-top:12px" type="submit">Sign in</button>
@@ -105,7 +105,7 @@
         <!-- USERS -->
         <section id="tab-users" class="hidden">
           <div class="toolbar">
-            <input id="userSearch" placeholder="Search username / name…" class="grow" />
+            <input id="userSearch" aria-label="Search users" placeholder="Search username / name…" class="grow" />
             <button id="userReload">Search</button>
           </div>
           <div class="panel" style="overflow:auto">
@@ -192,7 +192,11 @@
         };
       });
 
-      const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      // Escapes for both text and attribute contexts (includes quotes) to
+      // prevent stored XSS when admin-controlled values (e.g. topic, title)
+      // are interpolated into value="…".
+      const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       const who = (u) => u ? esc(u.username ? '@' + u.username : (u.firstName || u.telegramId)) : '<span class="muted">—</span>';
       const ACTIONS = ['WARN','UNWARN','MUTE','UNMUTE','KICK','BAN','UNBAN','DELETE_MESSAGE','NOTE'];
       const REASONS = ['SPAM','FLOOD','DUPLICATE','SCAM_LINK','BANNED_WORD','MANUAL','TOXICITY','HARASSMENT','OFF_TOPIC'];
@@ -236,7 +240,6 @@
       }
       async function showUser(id) {
         const u = await api('/users/' + id);
-        const chats = u.memberships.map((m) => `<option value="${m.chat ? '' : ''}">${esc(m.chat?.title || m.chat?.telegramId)}</option>`);
         const memOpts = u.memberships.map((m) => `<option value="${m.chatId}">${esc(m.chat?.title || m.chat?.telegramId)}</option>`).join('');
         $('#userDetail').classList.remove('hidden');
         $('#userDetail').innerHTML = `
@@ -285,7 +288,7 @@
                 </select></label>
             </div>
             <div class="row" style="margin-top:8px">
-              <label style="margin:0;flex:1">topic <input data-chat="${c.id}" data-key="topic" value="${esc(s.topic||'')}" class="grow"/></label>
+              <label style="margin:0;flex:1">topic <input data-chat="${c.id}" data-key="topic" maxlength="200" value="${esc(s.topic||'')}" class="grow"/></label>
             </div>
             <div class="row" style="margin-top:10px"><button class="primary" data-save="${c.id}">Save settings</button>
               <span class="err" data-err="${c.id}"></span></div>
@@ -298,8 +301,11 @@
         document.querySelectorAll(`[data-chat="${chatId}"]`).forEach((el) => {
           const k = el.dataset.key;
           if (el.type === 'checkbox') patch[k] = el.checked;
-          else if (el.type === 'number') patch[k] = Number(el.value);
-          else if (k === 'topic') patch[k] = el.value.trim() || null;
+          else if (el.type === 'number') {
+            // API requires positive ints; skip invalid/empty so we never PATCH a 0.
+            const n = Number(el.value);
+            if (Number.isFinite(n) && n > 0) patch[k] = Math.trunc(n);
+          } else if (k === 'topic') patch[k] = el.value.trim() || null;
           else patch[k] = el.value;
         });
         const errEl = document.querySelector(`[data-err="${chatId}"]`);

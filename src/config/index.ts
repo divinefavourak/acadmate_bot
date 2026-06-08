@@ -64,7 +64,12 @@ const envSchema = z.object({
 
   // Operational alerts: the bot DMs this Telegram user id on errors.
   // Leave blank to disable. You must /start the bot in DM at least once.
-  OWNER_TELEGRAM_ID: z.coerce.number().int().positive().optional(),
+  // Note: dotenv turns a blank `OWNER_TELEGRAM_ID=` into '', which would coerce
+  // to 0 and fail .positive(); normalise empty string to undefined (disabled).
+  OWNER_TELEGRAM_ID: z.preprocess(
+    (v) => (v === '' || v === undefined ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
   ERROR_ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(300),
 });
 
