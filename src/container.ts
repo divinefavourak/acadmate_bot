@@ -12,6 +12,12 @@ import { ModerationService } from '@/services/moderation.service';
 import { TaggingService } from '@/services/tagging.service';
 import { SchedulerService } from '@/services/scheduler.service';
 import { AuthService } from '@/services/auth.service';
+import { AiAssistantService } from '@/services/ai-assistant.service';
+import { MessageBufferService } from '@/services/message-buffer.service';
+import { ErrorReporterService } from '@/services/error-reporter.service';
+
+import { buildAiRouter } from '@/ai/ai-router.factory';
+import type { AiRouter } from '@/ai/ai-router';
 
 import { ModerationEngine } from '@/moderation/moderation.engine';
 import { BannedWordsDetector } from '@/moderation/detectors/banned-words.detector';
@@ -19,6 +25,7 @@ import { ScamLinkDetector } from '@/moderation/detectors/scam-link.detector';
 import { SpamDetector } from '@/moderation/detectors/spam.detector';
 import { FloodDetector } from '@/moderation/detectors/flood.detector';
 import { DuplicateDetector } from '@/moderation/detectors/duplicate.detector';
+import { AiModerationDetector } from '@/moderation/detectors/ai-moderation.detector';
 
 /**
  * The composition root. Constructs and wires every service exactly once.
@@ -39,6 +46,10 @@ export class Container {
   public readonly tagging: TaggingService;
   public readonly scheduler: SchedulerService;
   public readonly auth: AuthService;
+  public readonly aiRouter: AiRouter;
+  public readonly ai: AiAssistantService;
+  public readonly messageBuffer: MessageBufferService;
+  public readonly errorReporter: ErrorReporterService;
   public readonly engine: ModerationEngine;
   public readonly bannedWords: BannedWordsDetector;
 
@@ -52,6 +63,12 @@ export class Container {
     this.mutes = new MuteService(prisma, this.telegram);
     this.bans = new BanService(prisma, this.telegram);
     this.auth = new AuthService(prisma);
+    this.messageBuffer = new MessageBufferService();
+    this.errorReporter = new ErrorReporterService(this.telegram);
+
+    // AI: failover router + high-level assistant.
+    this.aiRouter = buildAiRouter();
+    this.ai = new AiAssistantService(this.aiRouter);
 
     // Orchestrators
     this.moderation = new ModerationService(
@@ -64,8 +81,9 @@ export class Container {
     this.tagging = new TaggingService(prisma, this.telegram);
     this.scheduler = new SchedulerService(prisma, this.tagging, this.mutes);
 
-    // Detection pipeline. Order matters: high-severity scam/banned-word checks
-    // run before the heuristic spam scorer and stateful flood/duplicate checks.
+    // Detection pipeline. Order matters: cheap, high-confidence checks run
+    // first; the AI classifier runs LAST so it's only consulted for messages
+    // the heuristics didn't already flag (saving free-tier quota).
     this.bannedWords = new BannedWordsDetector(prisma);
     this.engine = new ModerationEngine(prisma, [
       this.bannedWords,
@@ -73,6 +91,7 @@ export class Container {
       new SpamDetector(),
       new DuplicateDetector(prisma),
       new FloodDetector(prisma),
+      new AiModerationDetector(this.ai),
     ]);
   }
 }

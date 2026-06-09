@@ -3,6 +3,10 @@ import { ModerationActionType, type Prisma } from '@prisma/client';
 import type { BotContext } from '@/types';
 import type { Container } from '@/container';
 import { commandArgs, requireAdmin } from '@/bot/helpers';
+import { escapeMarkdown } from '@/utils/markdown';
+
+/** Max length for a chat topic, mirrored by the dashboard API schema. */
+const TOPIC_MAX_LENGTH = 200;
 
 /**
  * Per-chat configuration commands.
@@ -23,7 +27,8 @@ export function adminCommands(container: Container): Composer<BotContext> {
       [
         '⚙️ *Chat settings*',
         `spam: ${onOff(s.spamDetection)}  flood: ${onOff(s.floodDetection)}  duplicate: ${onOff(s.duplicateDetection)}`,
-        `scamLinks: ${onOff(s.scamLinkDetection)}  bannedWords: ${onOff(s.bannedWordsFilter)}`,
+        `scamLinks: ${onOff(s.scamLinkDetection)}  bannedWords: ${onOff(s.bannedWordsFilter)}  ai: ${onOff(s.aiModeration)}`,
+        `topic: ${s.topic ? escapeMarkdown(s.topic) : '(none)'}`,
         `flood: ${s.floodMaxMessages} msgs / ${s.floodWindowSeconds}s`,
         `duplicate window: ${s.duplicateWindowSeconds}s`,
         `warnThreshold: ${s.warnThreshold} → ${s.warnAction}`,
@@ -37,8 +42,11 @@ export function adminCommands(container: Container): Composer<BotContext> {
 
   composer.command('set', async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
-    const [key, value] = commandArgs(ctx);
-    if (!key || value === undefined) return void ctx.reply('Usage: /set <key> <value>');
+    const args = commandArgs(ctx);
+    const key = args[0];
+    // Join the remainder so free-text values like a topic can contain spaces.
+    const value = args.slice(1).join(' ');
+    if (!key || value === '') return void ctx.reply('Usage: /set <key> <value>');
 
     const data = buildSettingsPatch(key, value);
     if (!data) return void ctx.reply(`Unknown or invalid setting: ${key}`);
@@ -107,6 +115,13 @@ function buildSettingsPatch(key: string, value: string): Prisma.ChatSettingsUpda
       return { scamLinkDetection: bool };
     case 'bannedWordsFilter':
       return { bannedWordsFilter: bool };
+    case 'aiModeration':
+      return { aiModeration: bool };
+    case 'topic':
+      // Free-text; `/set topic off` clears it. Capped to match the API schema.
+      return {
+        topic: value === 'off' || value === 'none' ? null : value.slice(0, TOPIC_MAX_LENGTH),
+      };
     case 'deleteOnDetect':
       return { deleteOnDetect: bool };
     case 'floodMaxMessages':

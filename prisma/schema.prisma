@@ -42,6 +42,10 @@ enum DetectionReason {
   SCAM_LINK
   BANNED_WORD
   MANUAL
+  // AI-classifier categories
+  TOXICITY
+  HARASSMENT
+  OFF_TOPIC
 }
 
 enum AdminRole {
@@ -121,6 +125,10 @@ model ChatSettings {
   duplicateDetection Boolean @default(true)
   scamLinkDetection  Boolean @default(true)
   bannedWordsFilter  Boolean @default(true)
+  aiModeration       Boolean @default(true)
+
+  // Optional per-chat topic that sharpens AI OFF_TOPIC detection.
+  topic              String?
 
   // Flood thresholds
   floodMaxMessages   Int @default(5)
