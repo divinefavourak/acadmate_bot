@@ -10,9 +10,37 @@ import { escapeMarkdown } from '@/utils/markdown';
  *   /ask <question>        — anyone; answers via AI
  *   /summarize [N]         — admin; TL;DR of the last N messages (default 50)
  *   /appeal <user>         — admin; AI review of a ban with a recommendation
+ *   /aistatus              — admin; which provider is active / on cooldown
  */
 export function aiCommands(container: Container): Composer<BotContext> {
   const composer = new Composer<BotContext>();
+
+  composer.command('aistatus', async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    if (!container.ai.enabled) {
+      return void ctx.reply('🤖 AI is not configured (no provider keys set).');
+    }
+    const s = container.aiRouter.status();
+    const icon = (p: { configured: boolean; coolingDownSeconds: number }): string =>
+      !p.configured ? '⚪' : p.coolingDownSeconds > 0 ? '🟡' : '🟢';
+    const lines = s.providers.map((p) => {
+      const state = !p.configured
+        ? 'not configured'
+        : p.coolingDownSeconds > 0
+          ? `cooling down (${p.coolingDownSeconds}s left)`
+          : 'ready';
+      return `${icon(p)} ${p.name} — ${p.model}: ${state}`;
+    });
+    await ctx.reply(
+      [
+        '🤖 AI providers (priority order):',
+        ...lines,
+        '',
+        `➡️ Next request will use: ${s.next ?? 'none (all unavailable)'}`,
+        `🕑 Last served by: ${s.last ?? 'nothing yet'}`,
+      ].join('\n'),
+    );
+  });
 
   composer.command('ask', async (ctx) => {
     if (!container.ai.enabled) {

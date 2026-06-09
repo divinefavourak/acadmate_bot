@@ -22,9 +22,27 @@ export interface AiRouterOptions {
  * If every provider is unconfigured or cooling down, `complete` throws
  * `AiUnavailableError` and `available` returns false — callers degrade safely.
  */
+export interface AiProviderStatus {
+  name: string;
+  model: string;
+  configured: boolean;
+  /** Seconds remaining on cooldown (0 = ready). */
+  coolingDownSeconds: number;
+}
+
+export interface AiRouterStatus {
+  providers: AiProviderStatus[];
+  /** Provider that will be tried first for the next request, if any. */
+  next: string | null;
+  /** Provider that served the most recent successful request. */
+  last: string | null;
+}
+
 export class AiRouter {
   /** providerName → epoch ms until which it is skipped. */
   private readonly cooldownUntil = new Map<string, number>();
+  /** Name of the provider that served the most recent successful request. */
+  private lastProvider: string | null = null;
 
   constructor(
     private readonly providers: AiProvider[],
@@ -39,6 +57,20 @@ export class AiRouter {
   /** Names of providers in play, for diagnostics. */
   get providerNames(): string[] {
     return this.providers.filter((p) => p.isConfigured()).map((p) => p.name);
+  }
+
+  /** Live snapshot of provider health, for the /aistatus command. */
+  status(): AiRouterStatus {
+    const now = Date.now();
+    const providers = this.providers.map((p) => ({
+      name: p.name,
+      model: p.model,
+      configured: p.isConfigured(),
+      coolingDownSeconds: Math.max(0, Math.ceil(((this.cooldownUntil.get(p.name) ?? 0) - now) / 1000)),
+    }));
+    const next =
+      providers.find((p) => p.configured && p.coolingDownSeconds === 0)?.name ?? null;
+    return { providers, next, last: this.lastProvider };
   }
 
   async complete(opts: AiCompletionOptions): Promise<AiResult> {
@@ -65,7 +97,12 @@ export class AiRouter {
         else opts.signal.addEventListener('abort', onAbort, { once: true });
       }
       try {
-        return await provider.complete({ ...opts, signal: controller.signal });
+        const result = await provider.complete({ ...opts, signal: controller.signal });
+        if (this.lastProvider !== provider.name) {
+          log.info({ provider: provider.name, model: provider.model }, 'AI request served by provider');
+        }
+        this.lastProvider = provider.name;
+        return result;
       } catch (err) {
         lastError = err;
         this.handleFailure(provider.name, err);
