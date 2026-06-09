@@ -53,7 +53,7 @@ const envSchema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   AI_PROVIDER_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   AI_MODERATION_ENABLED: z

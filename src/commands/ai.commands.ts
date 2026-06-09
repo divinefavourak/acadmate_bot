@@ -21,11 +21,15 @@ export function aiCommands(container: Container): Composer<BotContext> {
     const question = commandArgs(ctx).join(' ').trim();
     if (!question) return void ctx.reply('Usage: /ask <your question>');
 
-    // Thread follow-ups per user+chat, and seed context if replying to a message.
+    // Thread follow-ups per user+chat, and seed context only when replying to
+    // one of THIS bot's own messages (so another user's text isn't injected as
+    // if the assistant had said it).
     const memoryKey = `${ctx.chat!.id}:${ctx.from!.id}`;
     const reply = ctx.message && 'reply_to_message' in ctx.message ? ctx.message.reply_to_message : undefined;
     const replyContext =
-      reply && 'text' in reply && reply.text ? reply.text : undefined;
+      reply && 'text' in reply && reply.text && reply.from?.id === ctx.botInfo?.id
+        ? reply.text
+        : undefined;
 
     await ctx.sendChatAction('typing').catch(() => undefined);
     const answer = await container.ai.ask(question, { memoryKey, replyContext });

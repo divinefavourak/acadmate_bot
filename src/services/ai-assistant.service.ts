@@ -112,7 +112,7 @@ export class AiAssistantService {
       });
       const answer = result.text.trim();
       if (opts?.memoryKey) {
-        this.saveTurn(opts.memoryKey, history, question.slice(0, 2000), answer);
+        this.saveTurn(opts.memoryKey, question.slice(0, 2000), answer);
       }
       return answer;
     } catch (err) {
@@ -130,9 +130,13 @@ export class AiAssistantService {
     return c.turns;
   }
 
-  private saveTurn(key: string, history: AiMessage[], question: string, answer: string): void {
+  private saveTurn(key: string, question: string, answer: string): void {
+    // Re-read the latest stored history (not the caller's pre-request snapshot)
+    // so two overlapping /ask calls for the same key don't drop each other's
+    // turns — the second writer appends to whatever the first already saved.
+    const current = this.loadHistory(key);
     const turns = [
-      ...history,
+      ...current,
       { role: 'user' as const, content: question },
       { role: 'assistant' as const, content: answer },
     ].slice(-this.maxTurns);
