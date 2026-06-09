@@ -21,7 +21,7 @@ export function generalCommands(): Composer<BotContext> {
         '*Tagging*: /tagall /admins /tag <role> /roles',
         '*Roles* (admins): /createrole /addrole',
         '*Scheduling* (admins): /schedtag /unschedule',
-        '*AI*: /ask <question> · /summarize [N] (admin) · /appeal <user> (admin)',
+        '*AI*: /ask <question> · /summarize [N] (admin) · /appeal <user> (admin) · /aistatus (admin)',
         '',
         'I automatically detect spam, flooding, duplicates, scam links, banned words,',
         'and use AI to catch context-aware toxicity, scams and harassment.',
