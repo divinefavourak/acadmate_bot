@@ -21,14 +21,20 @@ export function aiCommands(container: Container): Composer<BotContext> {
     const question = commandArgs(ctx).join(' ').trim();
     if (!question) return void ctx.reply('Usage: /ask <your question>');
 
+    // Thread follow-ups per user+chat, and seed context if replying to a message.
+    const memoryKey = `${ctx.chat!.id}:${ctx.from!.id}`;
+    const reply = ctx.message && 'reply_to_message' in ctx.message ? ctx.message.reply_to_message : undefined;
+    const replyContext =
+      reply && 'text' in reply && reply.text ? reply.text : undefined;
+
     await ctx.sendChatAction('typing').catch(() => undefined);
-    const answer = await container.ai.ask(question);
+    const answer = await container.ai.ask(question, { memoryKey, replyContext });
     await ctx.reply(answer ?? '🤖 Sorry, all AI providers are busy. Try again shortly.', {
       reply_parameters: { message_id: ctx.message!.message_id },
     });
   });
 
-  composer.command('summarize', async (ctx) => {
+  composer.command(['summarize', 'summarise'], async (ctx) => {
     if (!(await requireAdmin(ctx))) return;
     if (!container.ai.enabled) {
       return void ctx.reply('🤖 AI features are not configured right now.');

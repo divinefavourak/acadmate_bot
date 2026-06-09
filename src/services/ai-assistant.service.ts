@@ -1,4 +1,5 @@
 import type { AiRouter } from '@/ai/ai-router';
+import type { AiMessage } from '@/ai/ai.types';
 import { AiUnavailableError } from '@/ai/ai.errors';
 import { scopedLogger } from '@/utils/logger';
 
@@ -30,6 +31,12 @@ export interface AppealRecommendation {
  * falls back to heuristics) and the chat features return a friendly notice.
  */
 export class AiAssistantService {
+  // Short conversation memory for /ask, keyed by `${chatId}:${userId}`.
+  private readonly conversations = new Map<string, { at: number; turns: AiMessage[] }>();
+  private readonly convTtlMs = 15 * 60_000;
+  private readonly maxTurns = 8; // 4 user/assistant exchanges
+  private readonly maxConversations = 1000;
+
   constructor(private readonly router: AiRouter) {}
 
   get enabled(): boolean {
@@ -73,21 +80,70 @@ export class AiAssistantService {
     }
   }
 
-  /** Answer a member's question. Returns null when AI is unavailable. */
-  async ask(question: string): Promise<string | null> {
+  /**
+   * Answer a member's question, with short multi-turn memory so follow-ups
+   * keep context. `memoryKey` (chat+user) threads consecutive /ask calls;
+   * `replyContext` seeds the prior bot message when a user replies to it.
+   * Returns null when AI is unavailable.
+   */
+  async ask(
+    question: string,
+    opts?: { memoryKey?: string; replyContext?: string },
+  ): Promise<string | null> {
+    const history = opts?.memoryKey ? this.loadHistory(opts.memoryKey) : [];
+
+    const messages: AiMessage[] = [];
+    // If replying to a bot message that isn't already the last remembered turn,
+    // seed it so the model has the thing the user is following up on.
+    if (opts?.replyContext && history.at(-1)?.content !== opts.replyContext) {
+      messages.push({ role: 'assistant', content: opts.replyContext.slice(0, 2000) });
+    }
+    messages.push(...history, { role: 'user', content: question.slice(0, 2000) });
+
     try {
       const result = await this.router.complete({
         system:
           'You are a concise, helpful assistant inside a Telegram group for an academic/student community. ' +
-          'Answer in plain text (no markdown headings), under 120 words. If unsure, say so briefly.',
-        messages: [{ role: 'user', content: question.slice(0, 2000) }],
+          'Answer in plain text (no markdown headings), under 120 words. Use the prior conversation for ' +
+          'context when relevant. If unsure, say so briefly.',
+        messages,
         temperature: 0.5,
         maxTokens: 400,
       });
-      return result.text.trim();
+      const answer = result.text.trim();
+      if (opts?.memoryKey) {
+        this.saveTurn(opts.memoryKey, history, question.slice(0, 2000), answer);
+      }
+      return answer;
     } catch (err) {
       if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'ask failed');
       return null;
+    }
+  }
+
+  private loadHistory(key: string): AiMessage[] {
+    const c = this.conversations.get(key);
+    if (!c || Date.now() - c.at > this.convTtlMs) {
+      this.conversations.delete(key);
+      return [];
+    }
+    return c.turns;
+  }
+
+  private saveTurn(key: string, history: AiMessage[], question: string, answer: string): void {
+    const turns = [
+      ...history,
+      { role: 'user' as const, content: question },
+      { role: 'assistant' as const, content: answer },
+    ].slice(-this.maxTurns);
+
+    // Refresh LRU position and evict the oldest conversation past the cap.
+    this.conversations.delete(key);
+    this.conversations.set(key, { at: Date.now(), turns });
+    while (this.conversations.size > this.maxConversations) {
+      const oldest = this.conversations.keys().next().value;
+      if (oldest === undefined) break;
+      this.conversations.delete(oldest);
     }
   }
 
