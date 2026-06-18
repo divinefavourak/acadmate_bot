@@ -74,7 +74,7 @@ export function aiCommands(container: Container): Composer<BotContext> {
     const n = Number(commandArgs(ctx)[0]);
     const count = Number.isFinite(n) ? Math.min(300, Math.max(5, n)) : 50;
 
-    const transcript = container.messageBuffer.transcript(ctx.state.dbChatId!, count);
+    const transcript = await container.messageBuffer.transcript(ctx.state.dbChatId!, count);
     if (!transcript) {
       return void ctx.reply('Nothing recent to summarise yet — I only see messages since I started.');
     }

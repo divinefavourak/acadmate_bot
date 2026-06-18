@@ -170,6 +170,51 @@ export class AiAssistantService {
     }
   }
 
+  /**
+   * Generate an answer key for a batch of multiple-choice questions. Returns a
+   * map of `questionNumber → letter` ("A".."D"). Solves the whole batch in one
+   * call to save quota. Like the other methods, never throws: an unavailable
+   * provider (or unparseable output) yields an empty map so callers degrade to
+   * "answer unknown" rather than crashing a grading flow.
+   */
+  async solveQuiz(
+    questions: { number: number; prompt: string; options: Record<string, string> }[],
+  ): Promise<Map<number, string>> {
+    const result = new Map<number, string>();
+    if (questions.length === 0) return result;
+
+    const rendered = questions
+      .map((q) => {
+        const opts = Object.entries(q.options)
+          .map(([k, v]) => `${k}. ${v}`)
+          .join('\n');
+        return `${q.number}. ${q.prompt}\n${opts}`;
+      })
+      .join('\n\n');
+
+    try {
+      const completion = await this.router.complete({
+        system:
+          'You are an exam answer-key generator. For each multiple-choice question, pick the single ' +
+          'correct option letter (A, B, C or D). Respond with ONLY a JSON array of ' +
+          '{"number": <int>, "answer": "<A-D>"} — one entry per question, no prose.',
+        messages: [{ role: 'user', content: rendered.slice(0, 12_000) }],
+        json: true,
+        temperature: 0,
+        maxTokens: 1000,
+      });
+      const parsed = extractJsonArray<{ number?: number; answer?: string }>(completion.text);
+      for (const item of parsed ?? []) {
+        const n = Number(item?.number);
+        const letter = (item?.answer ?? '').trim().toUpperCase();
+        if (Number.isInteger(n) && /^[A-D]$/.test(letter)) result.set(n, letter);
+      }
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'solveQuiz failed');
+    }
+    return result;
+  }
+
   /** Review a ban appeal given context. Advisory only — a human still decides. */
   async reviewAppeal(context: string): Promise<AppealRecommendation | null> {
     try {
@@ -205,6 +250,20 @@ function extractJson<T>(text: string): T | null {
   if (start === -1 || end === -1 || end < start) return null;
   try {
     return JSON.parse(fenced.slice(start, end + 1)) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Like `extractJson`, but for a top-level JSON array (the quiz answer key). */
+function extractJsonArray<T>(text: string): T[] | null {
+  const fenced = text.replace(/```(?:json)?/gi, '').trim();
+  const start = fenced.indexOf('[');
+  const end = fenced.lastIndexOf(']');
+  if (start === -1 || end === -1 || end < start) return null;
+  try {
+    const parsed = JSON.parse(fenced.slice(start, end + 1)) as unknown;
+    return Array.isArray(parsed) ? (parsed as T[]) : null;
   } catch {
     return null;
   }

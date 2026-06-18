@@ -13,6 +13,7 @@ import { TaggingService } from '@/services/tagging.service';
 import { SchedulerService } from '@/services/scheduler.service';
 import { AuthService } from '@/services/auth.service';
 import { AiAssistantService } from '@/services/ai-assistant.service';
+import { QuizService } from '@/services/quiz.service';
 import { MessageBufferService } from '@/services/message-buffer.service';
 import { ErrorReporterService } from '@/services/error-reporter.service';
 
@@ -48,6 +49,7 @@ export class Container {
   public readonly auth: AuthService;
   public readonly aiRouter: AiRouter;
   public readonly ai: AiAssistantService;
+  public readonly quiz: QuizService;
   public readonly messageBuffer: MessageBufferService;
   public readonly errorReporter: ErrorReporterService;
   public readonly engine: ModerationEngine;
@@ -63,12 +65,13 @@ export class Container {
     this.mutes = new MuteService(prisma, this.telegram);
     this.bans = new BanService(prisma, this.telegram);
     this.auth = new AuthService(prisma);
-    this.messageBuffer = new MessageBufferService();
+    this.messageBuffer = new MessageBufferService(prisma);
     this.errorReporter = new ErrorReporterService(this.telegram);
 
     // AI: failover router + high-level assistant.
     this.aiRouter = buildAiRouter();
     this.ai = new AiAssistantService(this.aiRouter);
+    this.quiz = new QuizService(prisma, this.ai);
 
     // Orchestrators
     this.moderation = new ModerationService(

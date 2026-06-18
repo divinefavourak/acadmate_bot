@@ -6,12 +6,14 @@ import { Container } from '@/container';
 import { entityResolution } from '@/middleware/entity-resolution.middleware';
 import { rateLimit } from '@/middleware/rate-limit.middleware';
 import { moderationHandler } from './message-handler';
+import { quizHandler } from './quiz-handler';
 import { captureMessages } from '@/middleware/message-capture.middleware';
 import { generalCommands } from '@/commands/general.commands';
 import { moderationCommands } from '@/commands/moderation.commands';
 import { taggingCommands } from '@/commands/tagging.commands';
 import { adminCommands } from '@/commands/admin.commands';
 import { aiCommands } from '@/commands/ai.commands';
+import { quizCommands } from '@/commands/quiz.commands';
 import { scopedLogger } from '@/utils/logger';
 
 const log = scopedLogger('bot-setup');
@@ -46,8 +48,12 @@ export function buildBot(): BuiltBot {
   // 3. Resolve entities + roles for group activity.
   bot.use(entityResolution(container));
 
-  // 3b. Capture recent plaintext into the in-memory buffer for /summarize.
+  // 3b. Capture recent plaintext into the buffer for /summarize.
   bot.use(captureMessages(container));
+
+  // 3c. Auto-detect revision quizzes (capture questions / grade answers). Runs
+  //     for everyone and always calls next() so moderation still applies.
+  bot.use(quizHandler(container));
 
   // 4. Maintain membership bookkeeping on join/leave.
   bot.on(message('new_chat_members'), async (ctx, next) => {
@@ -71,6 +77,7 @@ export function buildBot(): BuiltBot {
   bot.use(taggingCommands(container));
   bot.use(adminCommands(container));
   bot.use(aiCommands(container));
+  bot.use(quizCommands(container));
 
   // 6. Automated moderation for any remaining text/caption message.
   bot.on(message(), moderationHandler(container));

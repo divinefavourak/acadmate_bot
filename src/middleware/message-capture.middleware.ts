@@ -20,7 +20,7 @@ export function captureMessages(container: Container): MiddlewareFn<BotContext> 
           firstName: ctx.from.first_name,
           telegramId: BigInt(ctx.from.id),
         });
-        container.messageBuffer.push(dbChatId, name, text);
+        await container.messageBuffer.push(dbChatId, name, text);
       }
     }
     return next();
