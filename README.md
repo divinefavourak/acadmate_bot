@@ -76,6 +76,8 @@ curl http://localhost:4000/health
 
 | Doc | Contents |
 |-----|----------|
+| [CLAUDE.md](CLAUDE.md) | Fast orientation for contributors/AI sessions: rules, architecture, gotchas |
+| [docs/operations.md](docs/operations.md) | Live server runbook: deploy, dashboard access, troubleshooting |
 | [docs/architecture.md](docs/architecture.md) | Layering, DI, moderation pipeline, topology |
 | [docs/specs.md](docs/specs.md) | Commands, config, detection rules, REST API spec |
 | [docs/deployment.md](docs/deployment.md) | Local, Docker, webhook, Kubernetes, migrations |
