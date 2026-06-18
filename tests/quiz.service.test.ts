@@ -118,6 +118,11 @@ function fakeDb() {
           .sort((a, b) => b.createdAt - a.createdAt);
         return include?.user ? rows.map((s) => ({ ...s, user: users[s.userId] })) : rows;
       },
+      update: async ({ where, data }: any) => {
+        const s = submissions.find((x) => x.id === where.id)!;
+        Object.assign(s, data);
+        return s;
+      },
     },
     $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
   };
@@ -206,5 +211,27 @@ describe('QuizService grading', () => {
 
     const result = await svc.gradeSubmission('chat', 'u1', answers({ 31: 'A', 32: 'C' }));
     expect(result).toEqual({ score: 2, total: 2, unsolved: 0 });
+  });
+
+  it('re-grades already-submitted answers after /setkey', async () => {
+    const svc = new QuizService(db as unknown as Database, fakeAi({ 31: 'D', 32: 'C' }));
+    await svc.ingestQuestions('chat', QUESTIONS);
+
+    // Student submits before the coach corrects a wrong AI answer.
+    await svc.gradeSubmission('chat', 'u1', answers({ 31: 'A', 32: 'C' })); // 1/2 vs AI key
+    await svc.setKey('chat', answers({ 31: 'A' })); // coach fixes Q31
+
+    const board = await svc.scores('chat');
+    expect(board).toEqual([{ label: '@ada', score: 2, total: 2 }]); // recomputed
+  });
+
+  it('does not persist an AI answer that is not one of the options', async () => {
+    // AI returns "C" but the captured question only has options A and B.
+    const partial = [{ number: 41, prompt: 'Q41', options: { A: 'a', B: 'b' } }];
+    const svc = new QuizService(db as unknown as Database, fakeAi({ 41: 'C' }));
+    await svc.ingestQuestions('chat', partial);
+
+    const result = await svc.gradeSubmission('chat', 'u1', answers({ 41: 'A' }));
+    expect(result).toEqual({ score: 0, total: 0, unsolved: 1 }); // stayed unsolved
   });
 });

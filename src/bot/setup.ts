@@ -51,10 +51,6 @@ export function buildBot(): BuiltBot {
   // 3b. Capture recent plaintext into the buffer for /summarize.
   bot.use(captureMessages(container));
 
-  // 3c. Auto-detect revision quizzes (capture questions / grade answers). Runs
-  //     for everyone and always calls next() so moderation still applies.
-  bot.use(quizHandler(container));
-
   // 4. Maintain membership bookkeeping on join/leave.
   bot.on(message('new_chat_members'), async (ctx, next) => {
     if (ctx.state.dbChatId) {
@@ -79,7 +75,12 @@ export function buildBot(): BuiltBot {
   bot.use(aiCommands(container));
   bot.use(quizCommands(container));
 
-  // 6. Automated moderation for any remaining text/caption message.
+  // 6. Auto-detect revision quizzes on remaining (non-command) messages. Sits
+  //    after commands and before moderation; always calls next() so the
+  //    moderation scan still runs.
+  bot.use(quizHandler(container));
+
+  // 7. Automated moderation for any remaining text/caption message.
   bot.on(message(), moderationHandler(container));
 
   return { bot, container };

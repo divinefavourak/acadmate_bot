@@ -35,6 +35,9 @@ export interface LeaderboardRow {
  * by an admin (/setkey).
  */
 export class QuizService {
+  /** Per-chat promise chain that serialises active-session creation. */
+  private readonly chatLocks = new Map<string, Promise<unknown>>();
+
   constructor(
     private readonly db: Database,
     private readonly ai: AiAssistantService,
@@ -46,7 +49,14 @@ export class QuizService {
    */
   async ingestQuestions(dbChatId: string, parsed: ParsedQuestion[]): Promise<number[]> {
     if (parsed.length === 0) return [];
-    const session = await this.getOrCreateActiveSession(dbChatId);
+    const session = await this.serialize(dbChatId, () => this.getOrCreateActiveSession(dbChatId));
+
+    // Heartbeat first: bump lastQuestionAt before writing questions so the
+    // scheduler's idle auto-close can't fire mid-ingest and orphan them.
+    await this.db.quizSession.update({
+      where: { id: session.id },
+      data: { lastQuestionAt: new Date() },
+    });
 
     await this.db.$transaction(
       parsed.map((q) =>
@@ -63,10 +73,6 @@ export class QuizService {
         }),
       ),
     );
-    await this.db.quizSession.update({
-      where: { id: session.id },
-      data: { lastQuestionAt: new Date() },
-    });
 
     await this.solvePending(session.id);
     return parsed.map((q) => q.number);
@@ -135,7 +141,11 @@ export class QuizService {
     return questions.map((q) => ({ number: q.number, correct: q.correct }));
   }
 
-  /** Admin override of correct answers in the active session. Returns count updated, or null. */
+  /**
+   * Admin override of correct answers in the active session. Returns count
+   * updated, or null. Existing submissions are re-graded against the corrected
+   * key so `/quizscores` and `/endquiz` reflect the fix without resubmission.
+   */
   async setKey(dbChatId: string, overrides: Map<number, OptionKey>): Promise<number | null> {
     const session = await this.findActiveSession(dbChatId);
     if (!session) return null;
@@ -147,6 +157,7 @@ export class QuizService {
       });
       updated += res.count;
     }
+    if (updated > 0) await this.recomputeSubmissions(session.id);
     return updated;
   }
 
@@ -205,7 +216,31 @@ export class QuizService {
     return this.db.quizSession.create({ data: { chatId: dbChatId } });
   }
 
-  /** Solve every still-unsolved question in a session via the AI router. */
+  /**
+   * Serialise an operation per chat. Telegraf processes updates concurrently, so
+   * two question batches posted at once could otherwise both find "no active
+   * session" and each create one, splitting quiz state. Chats are handled by a
+   * single process (replicas shard by chat), so an in-process queue is enough.
+   */
+  private serialize<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.chatLocks.get(chatId) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    const tail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.chatLocks.set(chatId, tail);
+    void tail.then(() => {
+      if (this.chatLocks.get(chatId) === tail) this.chatLocks.delete(chatId);
+    });
+    return next;
+  }
+
+  /**
+   * Solve every still-unsolved question in a session via the AI router. Only
+   * persists a letter that is actually one of the question's captured options,
+   * so a partially-captured question never gets an impossible key.
+   */
   private async solvePending(sessionId: string): Promise<void> {
     const pending = await this.db.quizQuestion.findMany({ where: { sessionId, correct: null } });
     if (pending.length === 0) return;
@@ -216,13 +251,39 @@ export class QuizService {
     if (key.size === 0) return;
 
     const updates = pending
-      .filter((q) => key.has(q.number))
+      .filter((q) => {
+        const letter = key.get(q.number);
+        return letter !== undefined && letter in toOptions(q.options);
+      })
       .map((q) =>
         this.db.quizQuestion.update({
           where: { id: q.id },
           data: { correct: key.get(q.number) },
         }),
       );
+    if (updates.length > 0) await this.db.$transaction(updates);
+  }
+
+  /** Re-grade every submission in a session against the current answer key. */
+  private async recomputeSubmissions(sessionId: string): Promise<void> {
+    const [questions, submissions] = await Promise.all([
+      this.db.quizQuestion.findMany({ where: { sessionId } }),
+      this.db.quizSubmission.findMany({ where: { sessionId } }),
+    ]);
+    const correctByNumber = new Map<number, string>();
+    for (const q of questions) if (q.correct !== null) correctByNumber.set(q.number, q.correct);
+
+    const updates = submissions.map((sub) => {
+      let score = 0;
+      let total = 0;
+      for (const [number, answer] of toAnswerMap(sub.answers)) {
+        const correct = correctByNumber.get(number);
+        if (correct === undefined) continue; // not in session / still unsolved
+        total++;
+        if (answer === correct) score++;
+      }
+      return this.db.quizSubmission.update({ where: { id: sub.id }, data: { score, total } });
+    });
     if (updates.length > 0) await this.db.$transaction(updates);
   }
 }
@@ -241,4 +302,16 @@ function toOptions(json: Prisma.JsonValue): Record<string, string> {
     return out;
   }
   return {};
+}
+
+/** Coerce a stored answers blob ({"31":"D",...}) into a number→letter map. */
+function toAnswerMap(json: Prisma.JsonValue): Map<number, string> {
+  const map = new Map<number, string>();
+  if (json && typeof json === 'object' && !Array.isArray(json)) {
+    for (const [k, v] of Object.entries(json)) {
+      const n = Number(k);
+      if (Number.isInteger(n) && typeof v === 'string') map.set(n, v);
+    }
+  }
+  return map;
 }

@@ -63,8 +63,10 @@ const envSchema = z.object({
   AI_MODERATION_MIN_LENGTH: z.coerce.number().int().nonnegative().default(24),
 
   // Revision quizzes: auto-detect numbered MCQs, AI-solve, and grade submissions.
+  // Strict enum so a typo (e.g. `enabled`) fails fast instead of silently
+  // disabling the feature.
   QUIZ_GRADING_ENABLED: z
-    .string()
+    .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
   // Idle gap after which an ACTIVE quiz session auto-closes / a new one starts.

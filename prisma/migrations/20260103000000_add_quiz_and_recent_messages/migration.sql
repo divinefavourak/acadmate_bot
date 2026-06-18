@@ -54,6 +54,9 @@ CREATE TABLE "recent_messages" (
 CREATE INDEX "quiz_sessions_chatId_status_idx" ON "quiz_sessions"("chatId", "status");
 
 -- CreateIndex
+CREATE INDEX "quiz_sessions_status_lastQuestionAt_idx" ON "quiz_sessions"("status", "lastQuestionAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "quiz_questions_sessionId_number_key" ON "quiz_questions"("sessionId", "number");
 
 -- CreateIndex
@@ -61,6 +64,9 @@ CREATE INDEX "quiz_submissions_sessionId_userId_idx" ON "quiz_submissions"("sess
 
 -- CreateIndex
 CREATE INDEX "recent_messages_chatId_createdAt_idx" ON "recent_messages"("chatId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "recent_messages_createdAt_idx" ON "recent_messages"("createdAt");
 
 -- AddForeignKey
 ALTER TABLE "quiz_sessions" ADD CONSTRAINT "quiz_sessions_chatId_fkey" FOREIGN KEY ("chatId") REFERENCES "chats"("id") ON DELETE CASCADE ON UPDATE CASCADE;

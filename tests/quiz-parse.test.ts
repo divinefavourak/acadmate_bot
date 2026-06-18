@@ -56,6 +56,13 @@ describe('parseQuestions', () => {
     expect(parseQuestions('31.\nSome trailing note with no options')).toHaveLength(0);
   });
 
+  it('does not split a block on a prompt line that starts with a digit', () => {
+    const qs = parseQuestions('31.\n2 + 2 equals?\nA. 3\nB. 4\nC. 5\nD. 6');
+    expect(qs).toHaveLength(1);
+    expect(qs[0]).toMatchObject({ number: 31, prompt: '2 + 2 equals?' });
+    expect(qs[0].options.B).toBe('4');
+  });
+
   it('does not treat an answer list as questions', () => {
     expect(parseQuestions(ANSWERS)).toHaveLength(0);
   });
@@ -97,7 +104,12 @@ describe('classifyQuizMessage', () => {
     expect(classifyQuizMessage('are we meeting at 5pm today?')).toBe('none');
   });
 
-  it('does not treat a single stray pair as answers', () => {
+  it('does not treat a stray pair embedded in prose as answers', () => {
     expect(classifyQuizMessage('see point 5. A above')).toBe('none');
+  });
+
+  it('grades a single-answer submission', () => {
+    // One-question quizzes / incremental replies must still be classified.
+    expect(classifyQuizMessage('31. D')).toBe('answers');
   });
 });

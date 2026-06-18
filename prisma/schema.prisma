@@ -395,6 +395,8 @@ model QuizSession {
   submissions QuizSubmission[]
 
   @@index([chatId, status])
+  // Covers the scheduler's idle auto-close scan (status + lastQuestionAt).
+  @@index([status, lastQuestionAt])
   @@map("quiz_sessions")
 }
 
@@ -448,5 +450,7 @@ model RecentMessage {
   chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
   @@index([chatId, createdAt])
+  // Covers the scheduler's age-based prune (createdAt across all chats).
+  @@index([createdAt])
   @@map("recent_messages")
 }

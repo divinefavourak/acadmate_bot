@@ -23,8 +23,12 @@ export interface ParsedQuestion {
   options: Partial<Record<OptionKey, string>>;
 }
 
-/** A number that begins a block, capturing any inline trailing text. */
-const NUMBER_LINE = /^\s*(\d{1,3})[.)]?\s*(.*)$/;
+/**
+ * A number that begins a block, capturing any inline trailing text. The `.`/`)`
+ * separator is required so a prompt line that merely starts with a digit
+ * (e.g. "2 + 2 equals?") is not mistaken for a new question header.
+ */
+const NUMBER_LINE = /^\s*(\d{1,3})[.)]\s*(.*)$/;
 /** A lettered option line, e.g. "A. Vitamin A" or "B) Mombasa". */
 const OPTION_LINE = /^\s*([A-Da-d])[.)]\s+(.+?)\s*$/;
 /** A "<number><sep><letter>" answer pair, where the letter is standalone. */
@@ -114,12 +118,15 @@ export function parseAnswers(text: string): Map<number, OptionKey> {
 
 /**
  * Cheap classification used by the quiz handler. Questions take priority (an MCQ
- * block can contain number+letter substrings); answers require ≥2 pairs so a
- * single stray "5. A" never triggers grading.
+ * block can contain number+letter substrings); any line that parses cleanly as
+ * answer pairs counts, so a single-question quiz or an incremental "31. D" reply
+ * is still graded. Stray chatter is already rejected by `parseAnswers` (a whole
+ * line must reduce to answer pairs), and the grader stays silent when there is
+ * no active session or no matching question — so a low threshold is safe here.
  */
 export function classifyQuizMessage(text: string): 'questions' | 'answers' | 'none' {
   if (!text || !text.trim()) return 'none';
   if (parseQuestions(text).length > 0) return 'questions';
-  if (parseAnswers(text).size >= 2) return 'answers';
+  if (parseAnswers(text).size >= 1) return 'answers';
   return 'none';
 }
