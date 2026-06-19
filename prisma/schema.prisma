@@ -411,6 +411,8 @@ model QuizQuestion {
   options   Json
   /// "A".."D" once solved; null = not yet known.
   correct   String?
+  /// Short AI-generated rationale for the correct answer; null until solved.
+  explanation String?
   createdAt DateTime @default(now())
 
   session QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

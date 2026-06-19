@@ -25,6 +25,11 @@ export interface AppealRecommendation {
   reason: string;
 }
 
+export interface QuizSolution {
+  answer: string; // "A".."D"
+  explanation: string;
+}
+
 /**
  * High-level AI use-cases built on the failover router. Every method degrades
  * gracefully: if no provider is available, moderation returns SAFE (so the bot
@@ -172,15 +177,16 @@ export class AiAssistantService {
 
   /**
    * Generate an answer key for a batch of multiple-choice questions. Returns a
-   * map of `questionNumber → letter` ("A".."D"). Solves the whole batch in one
-   * call to save quota. Like the other methods, never throws: an unavailable
-   * provider (or unparseable output) yields an empty map so callers degrade to
-   * "answer unknown" rather than crashing a grading flow.
+   * map of `questionNumber → { answer, explanation }`, where `answer` is the
+   * option letter ("A".."D") and `explanation` is a short rationale. Solves the
+   * whole batch in one call to save quota. Like the other methods, never throws:
+   * an unavailable provider (or unparseable output) yields an empty map so
+   * callers degrade to "answer unknown" rather than crashing a grading flow.
    */
   async solveQuiz(
     questions: { number: number; prompt: string; options: Record<string, string> }[],
-  ): Promise<Map<number, string>> {
-    const result = new Map<number, string>();
+  ): Promise<Map<number, QuizSolution>> {
+    const result = new Map<number, QuizSolution>();
     if (questions.length === 0) return result;
 
     const rendered = questions
@@ -196,18 +202,26 @@ export class AiAssistantService {
       const completion = await this.router.complete({
         system:
           'You are an exam answer-key generator. For each multiple-choice question, pick the single ' +
-          'correct option letter (A, B, C or D). Respond with ONLY a JSON array of ' +
-          '{"number": <int>, "answer": "<A-D>"} — one entry per question, no prose.',
+          'correct option letter (A, B, C or D) and give a brief reason. Respond with ONLY a JSON array ' +
+          'of {"number": <int>, "answer": "<A-D>", "explanation": "<one sentence, <=200 chars>"} — one ' +
+          'entry per question, no extra prose.',
         messages: [{ role: 'user', content: rendered.slice(0, 12_000) }],
         json: true,
         temperature: 0,
-        maxTokens: 1000,
+        maxTokens: 2000,
       });
-      const parsed = extractJsonArray<{ number?: number; answer?: string }>(completion.text);
+      const parsed = extractJsonArray<{ number?: number; answer?: string; explanation?: string }>(
+        completion.text,
+      );
       for (const item of parsed ?? []) {
         const n = Number(item?.number);
         const letter = (item?.answer ?? '').trim().toUpperCase();
-        if (Number.isInteger(n) && /^[A-D]$/.test(letter)) result.set(n, letter);
+        if (Number.isInteger(n) && /^[A-D]$/.test(letter)) {
+          result.set(n, {
+            answer: letter,
+            explanation: (item?.explanation ?? '').trim().slice(0, 300),
+          });
+        }
       }
     } catch (err) {
       if (!(err instanceof AiUnavailableError)) log.warn({ err }, 'solveQuiz failed');

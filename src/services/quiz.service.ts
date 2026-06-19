@@ -4,6 +4,13 @@ import type { AiAssistantService } from './ai-assistant.service';
 import type { OptionKey, ParsedQuestion } from '@/utils/quiz-parse';
 import { config } from '@/config';
 
+export interface MissedQuestion {
+  number: number;
+  correct: string; // letter "A".."D"
+  correctText: string; // the correct option's text
+  explanation: string | null;
+}
+
 export interface GradeResult {
   /** Correct answers among the gradeable (solved) questions the student answered. */
   score: number;
@@ -11,11 +18,21 @@ export interface GradeResult {
   total: number;
   /** Answered questions present in the session whose correct answer is unknown. */
   unsolved: number;
+  /** The questions the student got wrong, with the correct answer + rationale. */
+  missed: MissedQuestion[];
 }
 
 export interface KeyEntry {
   number: number;
   correct: string | null;
+}
+
+export interface ExplanationEntry {
+  number: number;
+  prompt: string;
+  correct: string | null;
+  correctText: string | null;
+  explanation: string | null;
 }
 
 export interface LeaderboardRow {
@@ -108,14 +125,25 @@ export class QuizService {
     let score = 0;
     let total = 0;
     let unsolved = 0;
+    const missed: MissedQuestion[] = [];
     for (const q of questions) {
       if (q.correct === null) {
         unsolved++;
         continue;
       }
       total++;
-      if (answers.get(q.number) === q.correct) score++;
+      if (answers.get(q.number) === q.correct) {
+        score++;
+      } else {
+        missed.push({
+          number: q.number,
+          correct: q.correct,
+          correctText: toOptions(q.options)[q.correct] ?? '',
+          explanation: q.explanation,
+        });
+      }
     }
+    missed.sort((a, b) => a.number - b.number);
 
     await this.db.quizSubmission.create({
       data: {
@@ -127,7 +155,31 @@ export class QuizService {
       },
     });
 
-    return { score, total, unsolved };
+    return { score, total, unsolved, missed };
+  }
+
+  /**
+   * Full explanations for the active session (every question + its rationale),
+   * ordered by number. Solves any pending questions first. Null if none active.
+   */
+  async explanations(dbChatId: string): Promise<ExplanationEntry[] | null> {
+    const session = await this.findActiveSession(dbChatId);
+    if (!session) return null;
+    await this.solvePending(session.id);
+    const questions = await this.db.quizQuestion.findMany({
+      where: { sessionId: session.id },
+      orderBy: { number: 'asc' },
+    });
+    return questions.map((q) => {
+      const opts = toOptions(q.options);
+      return {
+        number: q.number,
+        prompt: q.prompt,
+        correct: q.correct,
+        correctText: q.correct ? (opts[q.correct] ?? null) : null,
+        explanation: q.explanation,
+      };
+    });
   }
 
   /** The active session's answer key, ordered by question number. Null if none active. */
@@ -252,15 +304,16 @@ export class QuizService {
 
     const updates = pending
       .filter((q) => {
-        const letter = key.get(q.number);
-        return letter !== undefined && letter in toOptions(q.options);
+        const sol = key.get(q.number);
+        return sol !== undefined && sol.answer in toOptions(q.options);
       })
-      .map((q) =>
-        this.db.quizQuestion.update({
+      .map((q) => {
+        const sol = key.get(q.number)!;
+        return this.db.quizQuestion.update({
           where: { id: q.id },
-          data: { correct: key.get(q.number) },
-        }),
-      );
+          data: { correct: sol.answer, explanation: sol.explanation || null },
+        });
+      });
     if (updates.length > 0) await this.db.$transaction(updates);
   }
 

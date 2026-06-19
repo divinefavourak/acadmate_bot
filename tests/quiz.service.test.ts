@@ -26,6 +26,7 @@ function fakeDb() {
     prompt: string;
     options: unknown;
     correct: string | null;
+    explanation: string | null;
   };
   type Submission = {
     id: string;
@@ -84,7 +85,7 @@ function fakeDb() {
           Object.assign(existing, update);
           return existing;
         }
-        const q: Question = { id: id(), correct: null, ...create };
+        const q: Question = { id: id(), correct: null, explanation: null, ...create };
         questions.push(q);
         return q;
       },
@@ -130,12 +131,17 @@ function fakeDb() {
   return db;
 }
 
-/** AI stub returning a fixed answer key (or empty to simulate AI unavailable). */
-function fakeAi(key: Record<number, string>): AiAssistantService {
+/** AI stub returning a fixed answer key (+ optional explanations). Empty = AI unavailable. */
+function fakeAi(
+  key: Record<number, string>,
+  explanations: Record<number, string> = {},
+): AiAssistantService {
   return {
     solveQuiz: async (qs: { number: number }[]) => {
-      const m = new Map<number, string>();
-      for (const q of qs) if (key[q.number]) m.set(q.number, key[q.number]);
+      const m = new Map<number, { answer: string; explanation: string }>();
+      for (const q of qs) {
+        if (key[q.number]) m.set(q.number, { answer: key[q.number], explanation: explanations[q.number] ?? '' });
+      }
       return m;
     },
   } as unknown as AiAssistantService;
@@ -164,7 +170,12 @@ describe('QuizService grading', () => {
     await svc.ingestQuestions('chat', QUESTIONS);
 
     const result = await svc.gradeSubmission('chat', 'u1', answers({ 31: 'D', 32: 'B' }));
-    expect(result).toEqual({ score: 1, total: 2, unsolved: 0 });
+    expect(result).toEqual({
+      score: 1,
+      total: 2,
+      unsolved: 0,
+      missed: [{ number: 32, correct: 'C', correctText: 'c', explanation: null }],
+    });
   });
 
   it('only grades questions the student actually answered', async () => {
@@ -172,7 +183,7 @@ describe('QuizService grading', () => {
     await svc.ingestQuestions('chat', QUESTIONS);
 
     const result = await svc.gradeSubmission('chat', 'u1', answers({ 31: 'D' }));
-    expect(result).toEqual({ score: 1, total: 1, unsolved: 0 });
+    expect(result).toEqual({ score: 1, total: 1, unsolved: 0, missed: [] });
   });
 
   it('reports unsolved questions when the AI could not answer', async () => {
@@ -180,7 +191,38 @@ describe('QuizService grading', () => {
     await svc.ingestQuestions('chat', QUESTIONS);
 
     const result = await svc.gradeSubmission('chat', 'u1', answers({ 31: 'A', 32: 'B' }));
-    expect(result).toEqual({ score: 0, total: 0, unsolved: 2 });
+    expect(result).toEqual({ score: 0, total: 0, unsolved: 2, missed: [] });
+  });
+
+  it('returns the correct answer + explanation for missed questions', async () => {
+    const svc = new QuizService(
+      db as unknown as Database,
+      fakeAi({ 31: 'D', 32: 'C' }, { 32: 'Nairobi is the capital of Kenya.' }),
+    );
+    await svc.ingestQuestions('chat', QUESTIONS);
+
+    const result = await svc.gradeSubmission('chat', 'u1', answers({ 31: 'D', 32: 'B' }));
+    expect(result?.missed).toEqual([
+      { number: 32, correct: 'C', correctText: 'c', explanation: 'Nairobi is the capital of Kenya.' },
+    ]);
+  });
+
+  it('exposes per-question explanations for /explain', async () => {
+    const svc = new QuizService(
+      db as unknown as Database,
+      fakeAi({ 31: 'D', 32: 'C' }, { 31: 'Vitamin D from sunlight.' }),
+    );
+    await svc.ingestQuestions('chat', QUESTIONS);
+
+    const entries = await svc.explanations('chat');
+    expect(entries).toHaveLength(2);
+    expect(entries?.[0]).toEqual({
+      number: 31,
+      prompt: 'Q31',
+      correct: 'D',
+      correctText: 'd',
+      explanation: 'Vitamin D from sunlight.',
+    });
   });
 
   it('returns null when no quiz session is active', async () => {
@@ -210,7 +252,7 @@ describe('QuizService grading', () => {
     expect(updated).toBe(1);
 
     const result = await svc.gradeSubmission('chat', 'u1', answers({ 31: 'A', 32: 'C' }));
-    expect(result).toEqual({ score: 2, total: 2, unsolved: 0 });
+    expect(result).toEqual({ score: 2, total: 2, unsolved: 0, missed: [] });
   });
 
   it('re-grades already-submitted answers after /setkey', async () => {
@@ -232,6 +274,6 @@ describe('QuizService grading', () => {
     await svc.ingestQuestions('chat', partial);
 
     const result = await svc.gradeSubmission('chat', 'u1', answers({ 41: 'A' }));
-    expect(result).toEqual({ score: 0, total: 0, unsolved: 1 }); // stayed unsolved
+    expect(result).toEqual({ score: 0, total: 0, unsolved: 1, missed: [] }); // stayed unsolved
   });
 });

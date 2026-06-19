@@ -1,5 +1,15 @@
-import type { GradeResult, KeyEntry, LeaderboardRow } from '@/services/quiz.service';
+import type {
+  ExplanationEntry,
+  GradeResult,
+  KeyEntry,
+  LeaderboardRow,
+} from '@/services/quiz.service';
 import { escapeMarkdown } from '@/utils/markdown';
+
+/** Max wrong-answer reviews shown inline on a score reply (keeps it under 4096). */
+const MAX_INLINE_REVIEW = 12;
+/** Soft per-message character budget for chunked output. */
+const CHUNK_BUDGET = 3900;
 
 /**
  * Presentation helpers for the quiz feature. Kept in the transport layer (the bot
@@ -11,9 +21,12 @@ import { escapeMarkdown } from '@/utils/markdown';
 
 const BAR_LEN = 10;
 
-/** A student's auto-grade reply: score, a progress bar, and an encouraging tier. */
+/**
+ * A student's auto-grade reply: score, a progress bar, an encouraging tier, and
+ * a review of the questions they got wrong (correct answer + short rationale).
+ */
 export function formatScore(result: GradeResult): string {
-  const { score, total, unsolved } = result;
+  const { score, total, unsolved, missed } = result;
   if (total === 0) {
     return "⚠️ I couldn't grade that yet — the answer key isn't ready. Try again in a moment.";
   }
@@ -25,6 +38,17 @@ export function formatScore(result: GradeResult): string {
   if (unsolved > 0) {
     const s = unsolved === 1 ? '' : 's';
     lines.push(`⚠️ ${unsolved} question${s} couldn't be graded (no answer key).`);
+  }
+
+  if (missed.length > 0) {
+    lines.push('', '📚 *Review:*');
+    for (const m of missed.slice(0, MAX_INLINE_REVIEW)) {
+      const text = m.correctText ? `. ${escapeMarkdown(m.correctText)}` : '';
+      lines.push(`❌ ${m.number} → *${m.correct}*${text}`);
+      if (m.explanation) lines.push(`   _${escapeMarkdown(m.explanation)}_`);
+    }
+    const extra = missed.length - MAX_INLINE_REVIEW;
+    if (extra > 0) lines.push(`…and ${extra} more — ask an admin for /explain.`);
   }
   return lines.join('\n');
 }
@@ -68,4 +92,36 @@ export function formatLeaderboard(rows: LeaderboardRow[], title = '🏆 Leaderbo
     .map((r, i) => `${medals[i] ?? `${i + 1}.`} ${escapeMarkdown(r.label)} — ${r.score}/${r.total}`)
     .join('\n');
   return `*${title}*\n${body}`;
+}
+
+/**
+ * Full per-question explanations, split into one or more messages so a long
+ * session never exceeds Telegram's 4096-char limit.
+ */
+export function formatExplanations(entries: ExplanationEntry[]): string[] {
+  if (entries.length === 0) return ['ℹ️ No questions captured in the active session yet.'];
+  const blocks = entries.map((e) => {
+    const head = `*${e.number}.* ${escapeMarkdown(e.prompt)}`;
+    const answer = e.correct
+      ? `✅ *${e.correct}*${e.correctText ? `. ${escapeMarkdown(e.correctText)}` : ''}`
+      : '⬜ _not solved yet_';
+    const why = e.explanation ? `\n${escapeMarkdown(e.explanation)}` : '';
+    return `${head}\n${answer}${why}`;
+  });
+  return chunkBlocks(blocks, '📖 *Explanations — active session*');
+}
+
+/** Pack blocks into the fewest messages that stay under the char budget. */
+function chunkBlocks(blocks: string[], title: string): string[] {
+  const messages: string[] = [];
+  let current = title;
+  for (const block of blocks) {
+    if (current.length + block.length + 2 > CHUNK_BUDGET) {
+      messages.push(current);
+      current = '';
+    }
+    current = current ? `${current}\n\n${block}` : block;
+  }
+  if (current) messages.push(current);
+  return messages;
 }
