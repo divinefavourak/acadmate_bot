@@ -3,7 +3,8 @@ import type { BotContext } from '@/types';
 import type { Container } from '@/container';
 import { commandArgs, requireAdmin } from '@/bot/helpers';
 import { parseAnswers } from '@/utils/quiz-parse';
-import { formatAnswerKey, formatLeaderboard } from '@/bot/quiz-format';
+import { formatAnswerKey, formatExplanations, formatLeaderboard } from '@/bot/quiz-format';
+import { replyRich } from '@/bot/rich-reply';
 
 /**
  * Admin controls for the auto-graded quiz feature. Sessions start/grade
@@ -11,6 +12,7 @@ import { formatAnswerKey, formatLeaderboard } from '@/bot/quiz-format';
  * correct the AI-generated key and read/close the session.
  *
  *   /quizkey                 — show the active session's answer key
+ *   /explain                 — post per-question explanations (chunked)
  *   /setkey 31.D 32.C …      — override AI answers (AI can be wrong)
  *   /quizscores              — leaderboard for the active session
  *   /endquiz                 — close the session + post final results
@@ -23,6 +25,16 @@ export function quizCommands(container: Container): Composer<BotContext> {
     const key = await container.quiz.answerKey(ctx.state.dbChatId!);
     if (!key) return void ctx.reply('ℹ️ No active quiz session right now.');
     await ctx.reply(formatAnswerKey(key), { parse_mode: 'Markdown' });
+  });
+
+  composer.command('explain', async (ctx) => {
+    if (!(await requireAdmin(ctx))) return;
+    const entries = await container.quiz.explanations(ctx.state.dbChatId!);
+    if (!entries) return void ctx.reply('ℹ️ No active quiz session right now.');
+    await ctx.sendChatAction('typing').catch(() => undefined);
+    for (const message of formatExplanations(entries)) {
+      await replyRich(ctx, message, { parseMode: 'Markdown' });
+    }
   });
 
   composer.command('setkey', async (ctx) => {
