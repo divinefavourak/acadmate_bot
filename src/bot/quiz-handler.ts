@@ -44,7 +44,10 @@ export function quizHandler(container: Container): MiddlewareFn<BotContext> {
       } else if (kind === 'answers') {
         const result = await container.quiz.gradeSubmission(dbChatId, dbUserId, parseAnswers(text));
         if (result) {
-          await replyRich(ctx, formatScore(result), { replyToMessageId: msg.message_id });
+          await replyRich(ctx, formatScore(result), {
+            replyToMessageId: msg.message_id,
+            parseMode: 'Markdown',
+          });
         }
       }
     } catch (err) {

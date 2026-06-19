@@ -63,10 +63,12 @@ export function prettifyMath(text: string): string {
   for (const key of SYMBOL_KEYS) out = out.split(key).join(SYMBOLS[key]);
 
   // Superscripts / subscripts: ^{…} or ^<single>, _{…} or _<digit>.
+  // Subscripts require a preceding base token (e.g. x_2, H_{2}) — never a bare
+  // leading `_`, so a Markdown italic opener like `_2x_` is left intact.
   out = out.replace(/\^\{([^{}]+)\}/g, (m, g) => toScript(g, SUPERSCRIPT) ?? m);
   out = out.replace(/\^([0-9+\-=()ni])/g, (m, g) => toScript(g, SUPERSCRIPT) ?? m);
-  out = out.replace(/_\{([0-9+\-=()]+)\}/g, (m, g) => toScript(g, SUBSCRIPT) ?? m);
-  out = out.replace(/_([0-9])/g, (m, g) => toScript(g, SUBSCRIPT) ?? m);
+  out = out.replace(/(?<=[A-Za-z0-9)\]}])_\{([0-9+\-=()]+)\}/g, (m, g) => toScript(g, SUBSCRIPT) ?? m);
+  out = out.replace(/(?<=[A-Za-z0-9)\]}])_([0-9])/g, (m, g) => toScript(g, SUBSCRIPT) ?? m);
 
   // Tidy leftover LaTeX scaffolding and inline delimiters.
   out = out.replace(/\\left|\\right/g, '');

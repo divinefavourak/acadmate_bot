@@ -33,7 +33,7 @@ export function quizCommands(container: Container): Composer<BotContext> {
     if (!entries) return void ctx.reply('ℹ️ No active quiz session right now.');
     await ctx.sendChatAction('typing').catch(() => undefined);
     for (const message of formatExplanations(entries)) {
-      await replyRich(ctx, message);
+      await replyRich(ctx, message, { parseMode: 'Markdown' });
     }
   });
 

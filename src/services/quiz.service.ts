@@ -195,8 +195,10 @@ export class QuizService {
 
   /**
    * Admin override of correct answers in the active session. Returns count
-   * updated, or null. Existing submissions are re-graded against the corrected
-   * key so `/quizscores` and `/endquiz` reflect the fix without resubmission.
+   * updated, or null. The AI explanation justified the *previous* answer, so it
+   * is cleared on override (avoids "correct answer + contradictory why"). Existing
+   * submissions are re-graded so `/quizscores`/`/endquiz` reflect the fix without
+   * resubmission.
    */
   async setKey(dbChatId: string, overrides: Map<number, OptionKey>): Promise<number | null> {
     const session = await this.findActiveSession(dbChatId);
@@ -205,7 +207,7 @@ export class QuizService {
     for (const [number, letter] of overrides) {
       const res = await this.db.quizQuestion.updateMany({
         where: { sessionId: session.id, number },
-        data: { correct: letter },
+        data: { correct: letter, explanation: null },
       });
       updated += res.count;
     }

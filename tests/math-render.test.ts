@@ -22,6 +22,13 @@ describe('prettifyMath', () => {
     expect(prettifyMath('*Score* and _good effort_')).toBe('*Score* and _good effort_');
   });
 
+  it('does not rewrite a digit-leading Markdown italic (_2x_)', () => {
+    // The leading `_` opens italics, not a subscript — it must survive.
+    expect(prettifyMath('_2x_ is emphasised')).toBe('_2x_ is emphasised');
+    // But a real subscript with a base char is still converted.
+    expect(prettifyMath('H_2O')).toBe('H₂O');
+  });
+
   it('leaves unmappable superscripts as-is rather than corrupting them', () => {
     // No Unicode superscript for arbitrary letters → keep the literal text.
     expect(prettifyMath('x^a')).toBe('x^a');

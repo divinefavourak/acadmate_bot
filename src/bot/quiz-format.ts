@@ -115,13 +115,26 @@ export function formatExplanations(entries: ExplanationEntry[]): string[] {
 function chunkBlocks(blocks: string[], title: string): string[] {
   const messages: string[] = [];
   let current = title;
+  const flush = (): void => {
+    if (current.trim()) messages.push(current);
+    current = '';
+  };
   for (const block of blocks) {
-    if (current.length + block.length + 2 > CHUNK_BUDGET) {
-      messages.push(current);
-      current = '';
+    // Hard-split a single block that on its own exceeds the budget, so no
+    // message can ever exceed Telegram's limit.
+    for (const piece of hardWrap(block, CHUNK_BUDGET)) {
+      if (current && current.length + piece.length + 2 > CHUNK_BUDGET) flush();
+      current = current ? `${current}\n\n${piece}` : piece;
     }
-    current = current ? `${current}\n\n${block}` : block;
   }
-  if (current) messages.push(current);
-  return messages;
+  flush();
+  return messages.length > 0 ? messages : [title];
+}
+
+/** Split an over-long string into <= max-length pieces. */
+function hardWrap(text: string, max: number): string[] {
+  if (text.length <= max) return [text];
+  const pieces: string[] = [];
+  for (let i = 0; i < text.length; i += max) pieces.push(text.slice(i, i + max));
+  return pieces;
 }

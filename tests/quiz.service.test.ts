@@ -255,6 +255,21 @@ describe('QuizService grading', () => {
     expect(result).toEqual({ score: 2, total: 2, unsolved: 0, missed: [] });
   });
 
+  it('clears the stale AI explanation when an answer is overridden', async () => {
+    const svc = new QuizService(
+      db as unknown as Database,
+      fakeAi({ 31: 'D', 32: 'C' }, { 31: 'Old rationale for D.' }),
+    );
+    await svc.ingestQuestions('chat', QUESTIONS);
+
+    await svc.setKey('chat', answers({ 31: 'A' }));
+
+    const entries = await svc.explanations('chat');
+    const q31 = entries?.find((e) => e.number === 31);
+    expect(q31?.correct).toBe('A');
+    expect(q31?.explanation).toBeNull(); // old "why D" must not linger
+  });
+
   it('re-grades already-submitted answers after /setkey', async () => {
     const svc = new QuizService(db as unknown as Database, fakeAi({ 31: 'D', 32: 'C' }));
     await svc.ingestQuestions('chat', QUESTIONS);
