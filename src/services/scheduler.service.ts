@@ -1,8 +1,9 @@
 import cron, { type ScheduledTask } from 'node-cron';
-import { ScheduleStatus, type ScheduledTag } from '@prisma/client';
+import { QuizSessionStatus, ScheduleStatus, type ScheduledTag } from '@prisma/client';
 import type { Database } from '@/database/prisma.client';
 import type { TaggingService } from './tagging.service';
 import type { MuteService } from './mute.service';
+import { config } from '@/config';
 import { scopedLogger } from '@/utils/logger';
 
 const log = scopedLogger('scheduler');
@@ -134,13 +135,23 @@ export class SchedulerService {
       const expired = await this.mutes.expireDueMutes();
       if (expired > 0) log.debug({ expired }, 'expired mutes');
 
-      // Prune message_records older than 24h once per hour.
+      // Close quiz sessions that have gone idle (so a new batch starts fresh).
+      const idleCutoff = new Date(Date.now() - config.QUIZ_SESSION_IDLE_HOURS * 60 * 60 * 1000);
+      const closed = await this.db.quizSession.updateMany({
+        where: { status: QuizSessionStatus.ACTIVE, lastQuestionAt: { lt: idleCutoff } },
+        data: { status: QuizSessionStatus.CLOSED, closedAt: new Date() },
+      });
+      if (closed.count > 0) log.info({ closed: closed.count }, 'closed idle quiz sessions');
+
+      // Prune transient records older than 24h once per hour.
       if (new Date().getMinutes() === 0) {
         const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const { count } = await this.db.messageRecord.deleteMany({
-          where: { createdAt: { lt: cutoff } },
-        });
-        if (count > 0) log.info({ pruned: count }, 'pruned old message records');
+        const [records, recents] = await Promise.all([
+          this.db.messageRecord.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+          this.db.recentMessage.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+        ]);
+        if (records.count > 0) log.info({ pruned: records.count }, 'pruned old message records');
+        if (recents.count > 0) log.info({ pruned: recents.count }, 'pruned old recent messages');
       }
     } catch (err) {
       log.error({ err }, 'maintenance run failed');

@@ -62,6 +62,16 @@ const envSchema = z.object({
     .transform((v) => v === 'true' || v === '1'),
   AI_MODERATION_MIN_LENGTH: z.coerce.number().int().nonnegative().default(24),
 
+  // Revision quizzes: auto-detect numbered MCQs, AI-solve, and grade submissions.
+  // Strict enum so a typo (e.g. `enabled`) fails fast instead of silently
+  // disabling the feature.
+  QUIZ_GRADING_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+  // Idle gap after which an ACTIVE quiz session auto-closes / a new one starts.
+  QUIZ_SESSION_IDLE_HOURS: z.coerce.number().int().positive().default(6),
+
   // Operational alerts: the bot DMs this Telegram user id on errors.
   // Leave blank to disable. You must /start the bot in DM at least once.
   // Note: dotenv turns a blank `OWNER_TELEGRAM_ID=` into '', which would coerce

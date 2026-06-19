@@ -61,6 +61,11 @@ enum ScheduleStatus {
   CANCELLED
 }
 
+enum QuizSessionStatus {
+  ACTIVE
+  CLOSED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Telegram domain
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +90,7 @@ model TgUser {
   actionsTargeted ModerationLog[]  @relation("ActionTarget")
   actionsIssued   ModerationLog[]  @relation("ActionActor")
   tagRoleMembers  TagRoleMember[]
+  quizSubmissions QuizSubmission[]
 
   @@index([username])
   @@map("tg_users")
@@ -109,6 +115,8 @@ model Chat {
   logs          ModerationLog[]
   tagRoles      TagRole[]
   scheduledTags ScheduledTag[]
+  quizSessions  QuizSession[]
+  recentMessages RecentMessage[]
 
   @@map("chats")
 }
@@ -364,4 +372,85 @@ model RefreshToken {
 
   @@index([adminUserId])
   @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Revision quiz domain
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A revision-session quiz, auto-detected when an admin posts numbered MCQs.
+/// Stays ACTIVE while questions/answers flow; closed manually (/endquiz) or by
+/// the scheduler after it goes idle.
+model QuizSession {
+  id             String            @id @default(cuid())
+  chatId         String
+  status         QuizSessionStatus @default(ACTIVE)
+  startedAt      DateTime          @default(now())
+  /// Bumped each time new questions are ingested; drives idle auto-close.
+  lastQuestionAt DateTime          @default(now())
+  closedAt       DateTime?
+
+  chat        Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  questions   QuizQuestion[]
+  submissions QuizSubmission[]
+
+  @@index([chatId, status])
+  // Covers the scheduler's idle auto-close scan (status + lastQuestionAt).
+  @@index([status, lastQuestionAt])
+  @@map("quiz_sessions")
+}
+
+/// One multiple-choice question within a session. `correct` is the AI-generated
+/// (or admin-overridden) answer letter; null until solved.
+model QuizQuestion {
+  id        String   @id @default(cuid())
+  sessionId String
+  number    Int
+  prompt    String
+  /// Option map, e.g. {"A":"Vitamin A","B":"Vitamin B",...}.
+  options   Json
+  /// "A".."D" once solved; null = not yet known.
+  correct   String?
+  createdAt DateTime @default(now())
+
+  session QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, number])
+  @@map("quiz_questions")
+}
+
+/// A graded student submission for a session.
+model QuizSubmission {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String
+  /// Submitted answers, e.g. {"31":"D","32":"C",...}.
+  answers   Json
+  score     Int
+  total     Int
+  createdAt DateTime @default(now())
+
+  session QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    TgUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, userId])
+  @@map("quiz_submissions")
+}
+
+/// Persisted recent plaintext per chat, backing `/summarize`. Previously held in
+/// memory; now persisted at the user's request and pruned by the scheduler so
+/// retention stays bounded (24h).
+model RecentMessage {
+  id         String   @id @default(cuid())
+  chatId     String
+  authorName String
+  text       String
+  createdAt  DateTime @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
+  // Covers the scheduler's age-based prune (createdAt across all chats).
+  @@index([createdAt])
+  @@map("recent_messages")
 }

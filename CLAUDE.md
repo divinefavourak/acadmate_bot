@@ -54,7 +54,8 @@ npm run db:seed                seed dashboard super-admin
 - **Admins bypass ALL automated moderation.** Test AI/heuristic moderation from a NON-admin account, or it looks broken.
 - **AI moderation skips short messages** (`AI_MODERATION_MIN_LENGTH=24`, no link/mentions) to save quota. Short slurs → use `/addword`, not AI.
 - **Admin recognition is live** via `AdminCacheService` (Telegram `getChatAdministrators`, 60s cache) — a freshly-promoted admin is recognized within ~60s, no `/admins` needed.
-- **`/summarize` reads an in-memory buffer** (`MessageBufferService`) — only non-command messages **since the bot last started**; wiped on restart. "Nothing to summarise" is often correct, not a bug. `/summarise` is an alias.
+- **`/summarize` reads recent messages** (`MessageBufferService`, now DB-backed by `RecentMessage`, pruned to 24h by the scheduler). "Nothing to summarise" can still be correct on a quiet chat. `/summarise` is an alias.
+- **Auto-graded quizzes:** an **admin** posts numbered MCQs → the bot AI-solves them and opens a session; anyone replying with answers (`31. D`) is auto-graded. Question *capture* is admin-gated (so students can't inject a fake key), but *grading* is open to all. So set up a quiz from an admin account; a non-admin posting questions does nothing. AI answers can be wrong — review with `/quizkey`, fix with `/setkey`. Sessions auto-close after `QUIZ_SESSION_IDLE_HOURS`.
 - **`bot.launch()` in polling never resolves** — it's fire-and-forget in `bot/index.ts`; scheduler + shutdown are wired BEFORE it.
 - **Telegram IDs are `BigInt`** end-to-end; the API serializes them to strings (`api/http.ts serialize()`).
 - **`BOT_TOKEN` must be unquoted in `.env`** — docker-compose `env_file` keeps quotes literally → `401 Unauthorized`.
