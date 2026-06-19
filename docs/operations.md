@@ -27,21 +27,51 @@ inside containers. Don't "fix" the localhost value in `.env`.
 
 ## Deploying an update
 
+### Automated (CI/CD) — preferred
+
+Merging a PR into `main` triggers `.github/workflows/deploy.yml`: it runs the
+test suite, then SSHes into this server and deploys. Nothing to do by hand. You
+can also trigger it from the GitHub **Actions → Deploy → Run workflow** button.
+
+One-time setup (GitHub repo → Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|--------|-------|
+| `SSH_HOST` | `hackclub.app` |
+| `SSH_USER` | `jesutobi` |
+| `SSH_PRIVATE_KEY` | private key of a **dedicated deploy keypair** |
+| `SSH_KNOWN_HOSTS` | *(optional)* pinned host key for strict verification — `ssh-keyscan hackclub.app`. If unset, the workflow keyscans at deploy time. |
+
+Generate the deploy key and authorise it once:
+
+```bash
+# on your PC
+ssh-keygen -t ed25519 -f deploy_key -N "" -C "github-actions-deploy"
+ssh-copy-id -i deploy_key.pub jesutobi@hackclub.app   # or append deploy_key.pub to ~/.ssh/authorized_keys
+# paste the contents of deploy_key (the PRIVATE file) into the SSH_PRIVATE_KEY secret
+```
+
+### Manual
+
 ```bash
 ssh jesutobi@hackclub.app
 cd ~/acadmate_bot
 git pull origin main
 
-# ONLY if the PR changed prisma/schema.prisma (new columns/enums):
+# Rebuild the shared image FIRST so a newly-added migration is present in the
+# migrate container (it bakes the code — `run --rm migrate` alone reuses a stale
+# image and silently sees the old migration set).
+docker compose build bot api migrate
+
+# Always run it — it's a no-op when there's nothing pending, and this way a
+# migration is never accidentally skipped:
 docker compose run --rm migrate npx prisma migrate deploy
 
-# Rebuild + restart only what changed (bot, api, or both):
-docker compose up -d --build bot api
+# Recreate the services from the freshly built image:
+docker compose up -d bot api
 ```
 
-Match the deploy to the diff: code-only change → just `--build bot` (and `api`
-if you touched it); schema change → run the migration FIRST (new code expects
-the new columns). Verify:
+Verify:
 
 ```bash
 docker compose ps                                  # all "running"; migrate "exited (0)"
