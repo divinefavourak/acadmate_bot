@@ -40,6 +40,7 @@ One-time setup (GitHub repo → Settings → Secrets and variables → Actions):
 | `SSH_HOST` | `hackclub.app` |
 | `SSH_USER` | `jesutobi` |
 | `SSH_PRIVATE_KEY` | private key of a **dedicated deploy keypair** |
+| `SSH_KNOWN_HOSTS` | *(optional)* pinned host key for strict verification — `ssh-keyscan hackclub.app`. If unset, the workflow keyscans at deploy time. |
 
 Generate the deploy key and authorise it once:
 
@@ -62,16 +63,15 @@ git pull origin main
 # image and silently sees the old migration set).
 docker compose build bot api migrate
 
-# ONLY if the PR added a migration under prisma/migrations:
+# Always run it — it's a no-op when there's nothing pending, and this way a
+# migration is never accidentally skipped:
 docker compose run --rm migrate npx prisma migrate deploy
 
 # Recreate the services from the freshly built image:
 docker compose up -d bot api
 ```
 
-Match the deploy to the diff: code-only change → `build` + `up -d` is enough;
-schema change → run the migration BETWEEN them (new code expects the new
-columns). Verify:
+Verify:
 
 ```bash
 docker compose ps                                  # all "running"; migrate "exited (0)"

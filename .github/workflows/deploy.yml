@@ -10,6 +10,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -18,8 +21,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: npm
@@ -38,17 +43,28 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
+          # Optional: pin the server's host key for strict verification. If
+          # unset, we fall back to a one-time keyscan (still enforced).
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          # Rebuild the shared image (covers migrate/bot/api) so a newly-added
-          # migration is present, apply migrations, then recreate the services.
-          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
+          if [ -n "${SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+          # Deterministic update (reset, not pull), then rebuild the shared image
+          # BEFORE migrate so a newly-added migration is present, apply
+          # migrations, and recreate the services.
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes \
             "$SSH_USER@$SSH_HOST" \
             "set -e; cd ~/acadmate_bot \
-              && git pull origin main \
+              && git fetch origin main \
+              && git reset --hard origin/main \
               && docker compose build bot api migrate \
               && docker compose run --rm migrate npx prisma migrate deploy \
               && docker compose up -d bot api \
