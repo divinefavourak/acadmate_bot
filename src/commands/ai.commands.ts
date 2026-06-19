@@ -3,6 +3,7 @@ import type { BotContext } from '@/types';
 import type { Container } from '@/container';
 import { commandArgs, requireAdmin, resolveTarget } from '@/bot/helpers';
 import { escapeMarkdown } from '@/utils/markdown';
+import { replyRich } from '@/bot/rich-reply';
 
 /**
  * AI-powered commands, all backed by the failover router.
@@ -61,9 +62,12 @@ export function aiCommands(container: Container): Composer<BotContext> {
 
     await ctx.sendChatAction('typing').catch(() => undefined);
     const answer = await container.ai.ask(question, { memoryKey, replyContext });
-    await ctx.reply(answer ?? '🤖 Sorry, all AI providers are busy. Try again shortly.', {
-      reply_parameters: { message_id: ctx.message!.message_id },
-    });
+    if (!answer) {
+      return void ctx.reply('🤖 Sorry, all AI providers are busy. Try again shortly.', {
+        reply_parameters: { message_id: ctx.message!.message_id },
+      });
+    }
+    await replyRich(ctx, answer, { replyToMessageId: ctx.message!.message_id });
   });
 
   composer.command(['summarize', 'summarise'], async (ctx) => {
@@ -81,7 +85,10 @@ export function aiCommands(container: Container): Composer<BotContext> {
 
     await ctx.sendChatAction('typing').catch(() => undefined);
     const summary = await container.ai.summarize(transcript);
-    await ctx.reply(summary ?? '🤖 Sorry, all AI providers are busy. Try again shortly.');
+    if (!summary) {
+      return void ctx.reply('🤖 Sorry, all AI providers are busy. Try again shortly.');
+    }
+    await replyRich(ctx, summary);
   });
 
   composer.command('appeal', async (ctx) => {

@@ -4,6 +4,7 @@ import type { Container } from '@/container';
 import { commandArgs, requireAdmin } from '@/bot/helpers';
 import { parseAnswers } from '@/utils/quiz-parse';
 import { formatAnswerKey, formatExplanations, formatLeaderboard } from '@/bot/quiz-format';
+import { replyRich } from '@/bot/rich-reply';
 
 /**
  * Admin controls for the auto-graded quiz feature. Sessions start/grade
@@ -32,7 +33,7 @@ export function quizCommands(container: Container): Composer<BotContext> {
     if (!entries) return void ctx.reply('ℹ️ No active quiz session right now.');
     await ctx.sendChatAction('typing').catch(() => undefined);
     for (const message of formatExplanations(entries)) {
-      await ctx.reply(message, { parse_mode: 'Markdown' });
+      await replyRich(ctx, message);
     }
   });
 

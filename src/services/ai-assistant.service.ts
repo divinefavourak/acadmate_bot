@@ -110,7 +110,8 @@ export class AiAssistantService {
         system:
           'You are a concise, helpful assistant inside a Telegram group for an academic/student community. ' +
           'Answer in plain text (no markdown headings), under 120 words. Use the prior conversation for ' +
-          'context when relevant. If unsure, say so briefly.',
+          'context when relevant. If unsure, say so briefly. ' +
+          'For mathematics, write LaTeX: $...$ for inline expressions and $$...$$ for a standalone equation.',
         messages,
         temperature: 0.5,
         maxTokens: 400,
@@ -202,8 +203,9 @@ export class AiAssistantService {
       const completion = await this.router.complete({
         system:
           'You are an exam answer-key generator. For each multiple-choice question, pick the single ' +
-          'correct option letter (A, B, C or D) and give a brief reason. Respond with ONLY a JSON array ' +
-          'of {"number": <int>, "answer": "<A-D>", "explanation": "<one sentence, <=200 chars>"} — one ' +
+          'correct option letter (A, B, C or D) and give a brief reason. Write any mathematics in LaTeX ' +
+          '($...$ inline, $$...$$ for a standalone equation). Respond with ONLY a JSON array of ' +
+          '{"number": <int>, "answer": "<A-D>", "explanation": "<one sentence, <=200 chars>"} — one ' +
           'entry per question, no extra prose.',
         messages: [{ role: 'user', content: rendered.slice(0, 12_000) }],
         json: true,

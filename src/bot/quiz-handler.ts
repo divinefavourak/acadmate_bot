@@ -5,6 +5,7 @@ import type { Container } from '@/container';
 import { config } from '@/config';
 import { classifyQuizMessage, parseQuestions, parseAnswers } from '@/utils/quiz-parse';
 import { formatScore, formatCaptured } from './quiz-format';
+import { replyRich } from './rich-reply';
 import { scopedLogger } from '@/utils/logger';
 
 const log = scopedLogger('quiz-handler');
@@ -43,10 +44,7 @@ export function quizHandler(container: Container): MiddlewareFn<BotContext> {
       } else if (kind === 'answers') {
         const result = await container.quiz.gradeSubmission(dbChatId, dbUserId, parseAnswers(text));
         if (result) {
-          await ctx.reply(formatScore(result), {
-            reply_parameters: { message_id: msg.message_id },
-            parse_mode: 'Markdown',
-          });
+          await replyRich(ctx, formatScore(result), { replyToMessageId: msg.message_id });
         }
       }
     } catch (err) {
