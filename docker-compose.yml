@@ -3,6 +3,11 @@
 # `docker compose up -d` brings up Postgres, runs migrations,
 # then starts the bot and the dashboard API as separate services.
 #
+# The images are built by GitHub Actions and pulled from GHCR; nothing here
+# builds, because the production server does not have the memory for it.
+# Set IMAGE_TAG in .env (for example sha-1a2b3c4) to pin them to one commit.
+# To build from source instead, add `-f docker-compose.build.yml`.
+#
 # NOTE: containers reach Postgres at host `postgres` (the service name),
 # NOT `localhost`. We therefore build DATABASE_URL here from POSTGRES_*
 # and ignore the host-side DATABASE_URL in .env (which uses localhost for
@@ -33,9 +38,7 @@ services:
 
   # One-shot job: apply migrations, then exit. Other services wait on it.
   migrate:
-    build:
-      context: .
-      target: build
+    image: ghcr.io/divinefavourak/acadmate_bot:migrate-${IMAGE_TAG:-latest}
     command: npx prisma migrate deploy
     environment: *database_url
     depends_on:
@@ -44,9 +47,7 @@ services:
     restart: 'no'
 
   bot:
-    build:
-      context: .
-      target: runtime
+    image: ghcr.io/divinefavourak/acadmate_bot:${IMAGE_TAG:-latest}
     command: node dist/bot/index.js
     restart: unless-stopped
     env_file: .env
@@ -62,9 +63,7 @@ services:
       - '8443:8443'
 
   api:
-    build:
-      context: .
-      target: runtime
+    image: ghcr.io/divinefavourak/acadmate_bot:${IMAGE_TAG:-latest}
     command: node dist/api/server.js
     restart: unless-stopped
     env_file: .env

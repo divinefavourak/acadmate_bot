@@ -63,4 +63,4 @@ npm run db:seed                seed dashboard super-admin
 
 ## Deploy & dashboard access — see [docs/operations.md](docs/operations.md)
 
-TL;DR: SSH `jesutobi@hackclub.app` → `cd ~/acadmate_bot && git pull origin main` → run migration **only if schema changed** → `docker compose up -d --build bot api`. The dashboard is reached via an **outbound Cloudflare tunnel** (SSH `-L` forwarding is blocked at HackClub's gateway; the private `10.60.x` IP isn't routable). Full steps, troubleshooting, and env reference are in the operations runbook.
+TL;DR: SSH `jesutobi@hackclub.app` → `cd ~/acadmate_bot && git pull origin main` → run migration **only if schema changed** → `docker compose pull bot api migrate && docker compose up -d bot api`. Images are built by the Deploy workflow and pulled from GHCR; never build on the server. The dashboard is reached via an **outbound Cloudflare tunnel** (SSH `-L` forwarding is blocked at HackClub's gateway; the private `10.60.x` IP isn't routable). Full steps, troubleshooting, and env reference are in the operations runbook.
