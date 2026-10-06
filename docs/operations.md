@@ -58,16 +58,18 @@ ssh jesutobi@hackclub.app
 cd ~/acadmate_bot
 git pull origin main
 
-# Rebuild the shared image FIRST so a newly-added migration is present in the
-# migrate container (it bakes the code — `run --rm migrate` alone reuses a stale
-# image and silently sees the old migration set).
-docker compose build bot api migrate
+# Pull the images FIRST so a newly-added migration is present in the migrate
+# container (the image bakes the code: `run --rm migrate` alone reuses a stale
+# image and silently sees the old migration set). Wait for the Deploy workflow's
+# `image` job to finish before pulling. Never `docker compose build` here: the
+# server has 2 GB of RAM and a build can take it down.
+docker compose pull bot api migrate
 
 # Always run it — it's a no-op when there's nothing pending, and this way a
 # migration is never accidentally skipped:
 docker compose run --rm migrate npx prisma migrate deploy
 
-# Recreate the services from the freshly built image:
+# Recreate the services from the freshly pulled image:
 docker compose up -d bot api
 ```
 

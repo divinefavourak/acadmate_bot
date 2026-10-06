@@ -47,13 +47,23 @@ npm run dev:api
 The provided `docker-compose.yml` brings up Postgres, runs migrations as a
 one-shot job, then starts the `bot` and `api` services.
 
+The images are built by GitHub Actions and pulled from GHCR
+(`ghcr.io/divinefavourak/acadmate_bot`), so there is no build step:
+
 ```bash
 cp .env.example .env          # fill in real values
-docker compose build
+docker compose pull
 docker compose up -d
 
 # first-time only: seed the super-admin (uses SEED_ADMIN_EMAIL/PASSWORD from .env)
 docker compose run --rm migrate npx tsx prisma/seed.ts
+```
+
+To build from source instead (on a machine with memory to spare, not the
+production server), add the override file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 > The `migrate` service runs `prisma migrate deploy` and exits; `bot` and `api`

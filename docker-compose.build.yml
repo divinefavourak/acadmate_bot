@@ -1,0 +1,19 @@
+# Builds the images from source instead of pulling them from GHCR.
+# For a development machine only; the production server does not have the memory.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  migrate:
+    build:
+      context: .
+      target: build
+
+  bot:
+    build:
+      context: .
+      target: runtime
+
+  api:
+    build:
+      context: .
+      target: runtime
